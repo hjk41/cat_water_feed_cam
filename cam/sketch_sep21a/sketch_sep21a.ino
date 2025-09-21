@@ -1,10 +1,10 @@
 /*
  *  ESP32-CAM 红外触发 → 每 10s 拍照 → POST 到 Flask /detect
- *  检测到猫：GPIO12 输出 HIGH（开饮水机）
- *  未检测到猫：GPIO12 输出 LOW（关饮水机）→ 退出循环
+ *  检测到猫：SetFaucet(TURN_ON)（开饮水机）→ 继续循环
+ *  未检测到猫：SetFaucet(TURN_OFF)（关饮水机）→ 退出循环
  *  硬件：
  *    PIR 接 GPIO13（上拉），高电平触发
- *    继电器/饮水机开关接 GPIO12
+ *    饮水机继电器接 GPIO14,15（正负控制）
  */
 
 #include "esp_camera.h"
@@ -12,12 +12,11 @@
 #include <HTTPClient.h>
 #include <base64.h>
 
-// ========================== 配置区 ==========================
-const char* ssid     = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASS";
-const String serverUrl = "http://192.168.31.201:8099/detect";
+#include "wifi_config.h"
 
 #define PIR_GPIO   13
+int faucet_control_pos = 14;
+int faucet_control_neg = 15;
 // ===========================================================
 
 // AI-Thinker 引脚映射
@@ -38,8 +37,6 @@ const String serverUrl = "http://192.168.31.201:8099/detect";
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-int faucet_control_pos = 14;
-int faucet_control_neg = 15;
 int faucet_delay_ms = 500;
 
 enum FaucetAction {
@@ -55,7 +52,7 @@ void SetFaucet(FaucetAction action) {
     digitalWrite(faucet_control_pos, LOW);
     digitalWrite(faucet_control_neg, HIGH);
   }
-  delay(faucet_delay);
+  delay(faucet_delay_ms);
   digitalWrite(faucet_control_pos, LOW);
   digitalWrite(faucet_control_neg, LOW);
 }
@@ -66,8 +63,11 @@ camera_config_t config;
 void setup() {
   Serial.begin(115200);
   pinMode(PIR_GPIO, INPUT);
-  pinMode(RELAY_GPIO, OUTPUT);
-  digitalWrite(RELAY_GPIO, LOW);
+  pinMode(faucet_control_pos, OUTPUT);
+  pinMode(faucet_control_neg, OUTPUT);
+  digitalWrite(faucet_control_pos, LOW);
+  digitalWrite(faucet_control_neg, LOW);
+  SetFaucet(TURN_OFF);
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
