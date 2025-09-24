@@ -6,7 +6,11 @@ from flask import Flask, request, jsonify, render_template_string, url_for
 import requests
 import database as db
 from dotenv import load_dotenv
-from dashscope import MultiModalConversation
+import numpy as np
+import cv2
+
+# PaddleClas will be imported lazily to speed up initial import
+_paddle_clas_model = None
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -14,45 +18,54 @@ app = Flask(__name__)
 STATIC_DIR = Path("static/record")
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-# ========== 通义千问 API 配置 ==========
-DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY")
-if not DASHSCOPE_API_KEY:
-    raise ValueError("DASHSCOPE_API_KEY environment variable is not set.")
-# ======================================
 
-def qwen_has_cat(b64_image: str) -> (bool, str):
+def _get_paddle_clas():
+    """Lazy init and return PaddleClas classifier instance."""
+    global _paddle_clas_model
+    if _paddle_clas_model is None:
+        try:
+            from paddleclas import PaddleClas
+        except Exception as e:
+            raise RuntimeError(f"Failed to import PaddleClas: {e}")
+        # Use CPU by default; set use_gpu=True if GPU is available and configured
+        _paddle_clas_model = PaddleClas(topk=5, use_gpu=False)
+    return _paddle_clas_model
+
+
+from typing import Tuple
+
+def paddle_has_cat(b64_image: str) -> Tuple[bool, str]:
     """
-    调用通义千问视觉模型，返回 (是否检测到猫, 错误信息)
-    这里用通用检测 + 后过滤 label==cat
+    使用本地 PaddleClas 进行图像分类，判断是否包含猫类。
+    规则：预测 Top-K 类别名中包含 'cat'/'kitten'/'lynx'/'tiger cat' 等即视为有猫。
+    返回 (是否检测到猫, 错误信息)。
     """
     try:
-        image_data = base64.b64decode(b64_image)
-        image_path = f"data:image/jpeg;base64,{b64_image}" #f"file://{local_path}" #  Use data URI directly
+        image_bytes = base64.b64decode(b64_image)
+        nparr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            return False, "failed to decode image"
 
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"image": image_path},
-                    {"text": "图中是否有猫？请直接回答 有 或 没有。"}
-                ]
-            }
-        ]
+        classifier = _get_paddle_clas()
+        results = classifier.predict(img)
+        # results is typically a list with one dict for the input image
+        # Example keys: 'class_ids', 'scores', 'label_names'
+        has_cat = False
+        if isinstance(results, list) and len(results) > 0 and isinstance(results[0], dict):
+            labels = results[0].get("label_names") or []
+            labels_lc = [str(x).lower() for x in labels]
+            cat_keywords = [
+                "cat", "kitten", "tomcat", "tabby", "tiger cat", "siamese", "persian",
+                "egyptian cat", "lynx", "wildcat"
+            ]
+            has_cat = any(any(k in lbl for k in cat_keywords) for lbl in labels_lc)
+        else:
+            # Fallback: stringify results and search keywords
+            text = str(results).lower()
+            has_cat = any(k in text for k in ["cat", "kitten", "tiger cat", "lynx", "wildcat"]) 
 
-        response = MultiModalConversation.call(
-            api_key=DASHSCOPE_API_KEY,
-            model='qwen-vl-plus',
-            messages=messages,
-            stream=False,
-            result_format='json'
-        )
-
-        if response["status_code"] != 200:
-            return False, f"Qwen API {response['status_code']}: {response['message']}"
-
-        answer = response["output"]["choices"][0]["message"]["content"][0]["text"]
-        return not "没有" in answer, ""
-
+        return has_cat, ""
     except Exception as e:
         return False, str(e)
 
@@ -67,7 +80,7 @@ def detect():
     if not data or "image" not in data:
         return jsonify({"cat": False, "error": "missing image"}), 400
     b64 = data["image"]
-    cat, err = qwen_has_cat(b64)
+    cat, err = paddle_has_cat(b64)
     # 存图
     img_name = f"{uuid.uuid4().hex}.jpg"
     img_path = STATIC_DIR / img_name
@@ -82,14 +95,28 @@ def detect():
 @app.route("/log")
 def log():
     """
-    查看最近 20 次调用记录
+    查看最近 10 次调用记录，并清理更旧的记录与文件
     """
-    rows = db.get_recent_logs()
+    # Clean DB and FS: keep only last 10
+    try:
+        deleted = db.delete_older_records_keep_latest(limit=10)
+        for item in deleted:
+            try:
+                p = Path(item["image_path"]) if item.get("image_path") else None
+                if p and p.exists():
+                    p.unlink(missing_ok=True)
+            except Exception:
+                pass
+    except Exception:
+        # Ignore cleanup errors for log page availability
+        deleted = []
+
+    rows = db.get_recent_logs(limit=10)
     for r in rows:
         r['image_path'] = r['image_path'].replace('\\\\', '/').replace('\\', '/')
     # 简单表格展示
     html = """
-    <h2>最近 20 次检测记录</h2>
+    <h2>最近 10 次检测记录（已自动清理旧记录）</h2>
     <table border="1" cellpadding="5">
       <tr><th>时间</th><th>图片</th><th>有猫</th><th>错误</th></tr>
       {% for r in rows %}

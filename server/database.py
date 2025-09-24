@@ -37,4 +37,29 @@ def get_recent_logs(limit=20):
     conn.close()
     return [dict(r) for r in rows]
 
+def delete_older_records_keep_latest(limit=10):
+    """Delete records older than the latest `limit`, return deleted rows as dicts."""
+    conn = get_conn()
+    # Identify IDs to keep
+    keep_rows = conn.execute(
+        "SELECT id FROM log ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    keep_ids = {r[0] for r in keep_rows}
+
+    # Collect rows to delete (id, image_path)
+    del_rows = conn.execute(
+        "SELECT id, image_path FROM log WHERE id NOT IN (" + ",".join(["?"] * len(keep_ids)) + ")",
+        tuple(keep_ids) if keep_ids else tuple()
+    ).fetchall() if keep_ids else []
+
+    if del_rows:
+        del_ids = [r[0] for r in del_rows]
+        conn.execute(
+            "DELETE FROM log WHERE id IN (" + ",".join(["?"] * len(del_ids)) + ")",
+            tuple(del_ids)
+        )
+        conn.commit()
+    conn.close()
+    return [{"id": r[0], "image_path": r[1]} for r in del_rows]
+
 init_db()
