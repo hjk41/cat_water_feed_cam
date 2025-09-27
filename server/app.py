@@ -6,11 +6,7 @@ from flask import Flask, request, jsonify, render_template_string, url_for
 import requests
 import database as db
 from dotenv import load_dotenv
-import numpy as np
-import cv2
-
-# PaddleClas will be imported lazily to speed up initial import
-_paddle_clas_model = None
+from detection import paddle_has_cat_from_b64 as paddle_has_cat
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -18,56 +14,7 @@ app = Flask(__name__)
 STATIC_DIR = Path("static/record")
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
-
-def _get_paddle_clas():
-    """Lazy init and return PaddleClas classifier instance."""
-    global _paddle_clas_model
-    if _paddle_clas_model is None:
-        try:
-            from paddleclas import PaddleClas
-        except Exception as e:
-            raise RuntimeError(f"Failed to import PaddleClas: {e}")
-        # Use CPU by default; set use_gpu=True if GPU is available and configured
-        _paddle_clas_model = PaddleClas(topk=5, use_gpu=False)
-    return _paddle_clas_model
-
-
 from typing import Tuple
-
-def paddle_has_cat(b64_image: str) -> Tuple[bool, str]:
-    """
-    使用本地 PaddleClas 进行图像分类，判断是否包含猫类。
-    规则：预测 Top-K 类别名中包含 'cat'/'kitten'/'lynx'/'tiger cat' 等即视为有猫。
-    返回 (是否检测到猫, 错误信息)。
-    """
-    try:
-        image_bytes = base64.b64decode(b64_image)
-        nparr = np.frombuffer(image_bytes, dtype=np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            return False, "failed to decode image"
-
-        classifier = _get_paddle_clas()
-        results = classifier.predict(img)
-        # results is typically a list with one dict for the input image
-        # Example keys: 'class_ids', 'scores', 'label_names'
-        has_cat = False
-        if isinstance(results, list) and len(results) > 0 and isinstance(results[0], dict):
-            labels = results[0].get("label_names") or []
-            labels_lc = [str(x).lower() for x in labels]
-            cat_keywords = [
-                "cat", "kitten", "tomcat", "tabby", "tiger cat", "siamese", "persian",
-                "egyptian cat", "lynx", "wildcat"
-            ]
-            has_cat = any(any(k in lbl for k in cat_keywords) for lbl in labels_lc)
-        else:
-            # Fallback: stringify results and search keywords
-            text = str(results).lower()
-            has_cat = any(k in text for k in ["cat", "kitten", "tiger cat", "lynx", "wildcat"]) 
-
-        return has_cat, ""
-    except Exception as e:
-        return False, str(e)
 
 @app.route("/detect", methods=["POST"])
 def detect():
