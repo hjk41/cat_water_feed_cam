@@ -16,8 +16,8 @@ def _get_paddle_clas():
             from paddleclas import PaddleClas
         except Exception as e:
             raise RuntimeError(f"Failed to import PaddleClas: {e}")
-        # Default lightweight model; can override via env
-        model_name = os.getenv("PADDLECLAS_MODEL_NAME", "PPLCNet_x2_5")
+        # Default model optimized for complex background cat detection
+        model_name = os.getenv("PADDLECLAS_MODEL_NAME", "EfficientNetB0")
         _paddle_clas_model = PaddleClas(model_name=model_name, topk=5, use_gpu=False)
     return _paddle_clas_model
 
@@ -49,7 +49,9 @@ def _labels_has_cat(results) -> bool:
     # results is a generator, need to iterate through it
     cat_keywords = [
         "cat", "kitten", "tomcat", "tabby", "tiger cat", "siamese", "persian",
-        "egyptian cat", "lynx", "wildcat"
+        "egyptian cat", "lynx", "wildcat", "feline", "domestic cat", "house cat",
+        "maine coon", "british shorthair", "ragdoll", "munchkin", "scottish fold",
+        "bengal cat", "russian blue", "abyssinian", "birman", "oriental shorthair"
     ]
     
     # Convert generator to list to access the first result
