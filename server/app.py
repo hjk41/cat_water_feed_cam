@@ -1,6 +1,5 @@
 import os
 import base64
-import uuid
 from pathlib import Path
 from flask import Flask, request, jsonify, render_template_string, url_for
 import requests
@@ -10,9 +9,38 @@ from detection import paddle_has_cat_from_b64 as paddle_has_cat
 
 load_dotenv()  # Load environment variables from .env file
 
-app = Flask(__name__)
-STATIC_DIR = Path("static/record")
+STATIC_DIR = Path(__file__).parent / "static"
 STATIC_DIR.mkdir(parents=True, exist_ok=True)
+app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path='/static')
+
+# Global counter for incremental image IDs
+_image_counter = 0
+
+def initialize_image_counter():
+    """Initialize the image counter based on existing files"""
+    global _image_counter
+    max_id = 0
+    if STATIC_DIR.exists():
+        for file_path in STATIC_DIR.glob("*.jpg"):
+            try:
+                # Extract numeric ID from filename (e.g., "000001.jpg" -> 1)
+                file_id = int(file_path.stem)
+                max_id = max(max_id, file_id)
+            except ValueError:
+                # Skip files that don't match the numeric pattern
+                continue
+    if max_id >= (100000 - 1):
+        max_id = 0
+    _image_counter = max_id
+
+def get_next_image_id():
+    """Get the next incremental image ID"""
+    global _image_counter
+    _image_counter += 1
+    return _image_counter
+
+# Initialize counter on startup
+initialize_image_counter()
 
 from typing import Tuple
 
@@ -28,15 +56,16 @@ def detect():
         return jsonify({"cat": False, "error": "missing image"}), 400
     b64 = data["image"]
     cat, err = paddle_has_cat(b64)
-    # 存图
-    img_name = f"{uuid.uuid4().hex}.jpg"
+    # 存图 - 使用递增序列ID
+    img_id = get_next_image_id()
+    img_name = f"{img_id:06d}.jpg"  # 6位数字，如 000001.jpg, 000002.jpg
     img_path = STATIC_DIR / img_name
     try:
         with open(img_path, "wb") as f:
             f.write(base64.b64decode(b64))
     except Exception as e:
         err = str(e)
-    db.insert_record(str(img_path), cat, err)
+    db.insert_record(str(app.static_url_path + "/" + img_name), cat, err)
     return jsonify({"cat": cat})
 
 @app.route("/log")
@@ -69,7 +98,7 @@ def log():
       {% for r in rows %}
       <tr>
         <td>{{ r.ts }}</td>
-        <td><img src="/{{ r.image_path }}" width="200"></td>
+        <td><img src="{{ r.image_path }}" width="200"></td>
         <td>{{ "✔" if r.cat else "✘" }}</td>
         <td>{{ r.error or "-" }}</td>
       </tr>
