@@ -47,7 +47,8 @@ initialize_image_counter()
 def resize_image_if_needed(image_bytes: bytes, max_size: int = 640) -> bytes:
     """
     Resize image to at most max_size in the largest dimension while keeping aspect ratio.
-    Returns the resized image as bytes.
+    Also flips the image 180 degrees to correct ESP32 camera orientation.
+    Returns the resized and flipped image as bytes.
     """
     try:
         # Decode image from bytes
@@ -57,11 +58,16 @@ def resize_image_if_needed(image_bytes: bytes, max_size: int = 640) -> bytes:
         if img is None:
             return image_bytes  # Return original if decode fails
         
-        height, width = img.shape[:2]
+        # Flip image 180 degrees to correct ESP32 camera upside-down orientation
+        img_flipped = cv2.rotate(img, cv2.ROTATE_180)
+        
+        height, width = img_flipped.shape[:2]
         
         # Calculate new dimensions
         if max(height, width) <= max_size:
-            return image_bytes  # No resize needed
+            # No resize needed, just encode the flipped image
+            _, encoded_img = cv2.imencode('.jpg', img_flipped, [cv2.IMWRITE_JPEG_QUALITY, 85])
+            return encoded_img.tobytes()
         
         # Calculate scale factor
         scale = max_size / max(height, width)
@@ -69,7 +75,7 @@ def resize_image_if_needed(image_bytes: bytes, max_size: int = 640) -> bytes:
         new_height = int(height * scale)
         
         # Resize image
-        resized_img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_AREA)
+        resized_img = cv2.resize(img_flipped, (new_width, new_height), interpolation=cv2.INTER_AREA)
         
         # Encode back to bytes
         _, encoded_img = cv2.imencode('.jpg', resized_img, [cv2.IMWRITE_JPEG_QUALITY, 85])
