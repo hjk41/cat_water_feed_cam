@@ -10,6 +10,10 @@ import psutil
 import gc
 from pathlib import Path
 
+# 设置控制台编码为UTF-8以支持中文输出
+import os
+os.environ['PYTHONIOENCODING'] = 'utf-8'
+
 # Ensure parent directory (server/) is on path so we can import detection.py
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 

@@ -55,16 +55,36 @@ def _labels_has_cat(results) -> bool:
         "bengal cat", "russian blue", "abyssinian", "birman", "oriental shorthair"
     ]
     
+    # 添加其他毛茸茸动物关键词，这些也会被识别为猫
+    furry_animal_keywords = [
+        "dog", "puppy", "puppies", "canine", "hound", "terrier", "retriever",
+        "shepherd", "spaniel", "poodle", "bulldog", "beagle", "chihuahua",
+        "rabbit", "bunny", "hare", "hamster", "guinea pig", "gerbil",
+        "ferret", "weasel", "mink", "otter", "raccoon", "raccoon dog",
+        "fox", "red fox", "arctic fox", "wolf", "coyote", "jackal",
+        "bear", "panda", "koala", "squirrel", "chipmunk", "marmot",
+        "hedgehog", "porcupine", "skunk", "badger", "wolverine",
+        "seal", "sea lion", "walrus", "otter", "beaver", "muskrat",
+        "chinchilla", "capybara", "lemur", "monkey", "ape", "gorilla",
+        "furry", "fluffy", "hairy", "fuzzy", "woolly", "downy"
+    ]
+    
+    # 合并所有关键词
+    all_keywords = cat_keywords + furry_animal_keywords
+    
     # Convert generator to list to access the first result
     results_list = list(results)
-    
+    rt = False
     if len(results_list) > 0 and isinstance(results_list[0], dict):
         labels = results_list[0].get("label_names") or []
         labels_lc = [str(x).lower() for x in labels]
-        return any(any(k in lbl for k in cat_keywords) for lbl in labels_lc)
-    
-    # Fallback: search in string representation
-    text = str(results_list).lower()
-    return any(k in text for k in cat_keywords)
+        rt = any(any(k in lbl for k in all_keywords) for lbl in labels_lc)
+    else:
+        # Fallback: search in string representation
+        text = str(results_list).lower()
+        rt = any(k in text for k in all_keywords)
+    if not rt:
+        print(f"No cat or furry animal found in {results_list}")
+    return rt
 
 
