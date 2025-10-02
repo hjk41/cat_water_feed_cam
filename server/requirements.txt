@@ -3,3 +3,4 @@ requests==2.31.0
 dotenv
 paddlepaddle==2.6.2
 paddleclas
+psutil
