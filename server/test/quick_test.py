@@ -22,9 +22,9 @@ from detection import paddle_has_cat_from_bytes
 # 快速测试的模型列表（选择几个代表性模型）
 QUICK_TEST_MODELS = [
     "EfficientNetB0",
-#    "ResNet50", 
-#    "PPLCNet_x1_0",
-#    "PPHGNet_tiny"
+    "ResNet50", 
+    "PPLCNet_x1_0",
+    "PPHGNet_tiny"
 ]
 
 def get_ground_truth(filename):
