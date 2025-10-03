@@ -54,6 +54,15 @@ void setLED(bool state) {
   }
 }
 
+// LED control with brightness setting
+void setLEDBrightness(int brightness) {
+  if (brightness > 0) {
+    analogWrite(LED_GPIO, brightness);
+  } else {
+    digitalWrite(LED_GPIO, LOW);
+  }
+}
+
 
 // Function to manually adjust white balance if needed
 void adjustWhiteBalance() {
@@ -190,7 +199,23 @@ void setup() {
     Serial.println("Warning: Could not get camera sensor");
   }
   
+  // Apply camera flip settings for 180-degree rotation
+  setCameraFlip();
+  
   Serial.println("Setup complete - System ready with dim LED");
+}
+
+// Function to set camera flip settings
+void setCameraFlip() {
+  sensor_t *s = esp_camera_sensor_get();
+  if (s != NULL) {
+    // Set both horizontal and vertical flip to achieve 180-degree rotation
+    s->set_hmirror(s, 1);  // Horizontal mirror (flip horizontally)
+    s->set_vflip(s, 1);    // Vertical flip (flip vertically)
+    Serial.println("Camera flip settings applied (180-degree rotation)");
+  } else {
+    Serial.println("Warning: Could not get camera sensor for flip settings");
+  }
 }
 
 // 拍照 → base64 → POST JSON → 解析结果
@@ -256,8 +281,9 @@ void loop() {
     lastTriggerTime = millis();
     Serial.println("PIR triggered → entering detection loop");
     
-    // Turn on LED when entering detection loop
-    setLED(true);
+    // Turn on LED at maximum brightness when entering detection loop
+    setLEDBrightness(255);  // Maximum brightness (0-255)
+    Serial.println("LED set to maximum brightness");
     
     // Detection loop - runs every 10 seconds until no cat detected
     int detectionCount = 0;
@@ -296,5 +322,5 @@ void loop() {
     }
   }
   
-  delay(1000);  // Small delay to avoid busy looping
+  delay(5000);  // Small delay to avoid busy looping
 }
