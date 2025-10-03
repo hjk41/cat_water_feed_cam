@@ -45,21 +45,14 @@ enum FaucetAction {
   TURN_OFF
 };
 
-// LED control functions
-void setLED(bool state) {
-  if (state) {
-    analogWrite(LED_GPIO, 1);
-  } else {
-    digitalWrite(LED_GPIO, LOW);
-  }
-}
-
 // LED control with brightness setting
 void setLEDBrightness(int brightness) {
   if (brightness > 0) {
     analogWrite(LED_GPIO, brightness);
   } else {
+    // Ensure LED is completely off
     digitalWrite(LED_GPIO, LOW);
+    analogWrite(LED_GPIO, 0);  // Also set PWM to 0 to ensure it's off
   }
 }
 
@@ -107,7 +100,7 @@ void setup() {
   pinMode(faucet_control_neg, OUTPUT);
   digitalWrite(faucet_control_pos, LOW);
   digitalWrite(faucet_control_neg, LOW);
-  setLED(false);  // Start with LED off
+  setLEDBrightness(0);  // Start with LED off
   SetFaucet(TURN_OFF);
   
   Serial.println("GPIO pins configured");
@@ -128,9 +121,9 @@ void setup() {
     Serial.println("\nWiFi connection failed - continuing anyway");
   }
   
-  // Set LED to dimmest setting
-  analogWrite(LED_GPIO, 1);  // PWM value 1/255 for dimmest
-  Serial.println("WiFi setup complete - LED set to dimmest");
+  // Set LED to off initially
+  setLEDBrightness(0);  // LED off
+  Serial.println("WiFi setup complete - LED set to off");
 
   // 摄像头初始化
   Serial.println("Initializing camera...");
@@ -282,7 +275,7 @@ void loop() {
     Serial.println("PIR triggered → entering detection loop");
     
     // Turn on LED at maximum brightness when entering detection loop
-    setLEDBrightness(255);  // Maximum brightness (0-255)
+    setLEDBrightness(2);  // Maximum brightness (0-255)
     Serial.println("LED set to maximum brightness");
     
     // Detection loop - runs every 10 seconds until no cat detected
@@ -306,21 +299,18 @@ void loop() {
       Serial.println("Waiting 10 seconds before next detection...");
       delay(10000);  // Wait 10 seconds before next detection
     }
-    
-    // Turn off LED when exiting detection loop
-    setLED(false);
-    Serial.println("Exited detection loop - LED OFF");
+
+    Serial.println("Exited detection loop");
   }
   else {
-    // No PIR trigger - turn off faucet
-    setLED(false);
-    
     // Turn off faucet if no trigger for 30 seconds
     if (millis() - lastTriggerTime > 30000) {
       SetFaucet(TURN_OFF);
+      // Turn off LED when exiting detection loop
+      setLEDBrightness(0);
       Serial.println("No PIR trigger for 30s → faucet OFF");
     }
   }
   
-  delay(5000);  // Small delay to avoid busy looping
+  delay(2000);  // Small delay to avoid busy looping
 }
