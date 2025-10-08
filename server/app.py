@@ -18,6 +18,9 @@ app = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path='/static')
 # Global counter for incremental image IDs
 _image_counter = 0
 
+# Global brightness detection toggle
+_brightness_detection_enabled = True
+
 def initialize_image_counter():
     """Initialize the image counter based on existing files"""
     global _image_counter
@@ -140,7 +143,13 @@ def detect():
     
     # 计算图片亮度
     brightness = calculate_image_brightness(resized_bytes)
-    too_dark = is_image_too_dark(brightness)
+    
+    # 根据全局设置决定是否检测亮度
+    if _brightness_detection_enabled:
+        too_dark = is_image_too_dark(brightness)
+    else:
+        too_dark = False  # 禁用亮度检测时，始终返回最大亮度
+        brightness = 255.0  # 返回最大亮度值
     
     # 如果图片太暗，直接返回too_dark=true，不进行猫检测
     if too_dark:
@@ -172,6 +181,23 @@ def detect():
     db.insert_record(str(app.static_url_path + "/" + img_name), cat, err)
     return jsonify({"cat": cat, "too_dark": False, "brightness": brightness})
 
+@app.route("/toggle_brightness", methods=["POST"])
+def toggle_brightness():
+    """Toggle brightness detection on/off"""
+    global _brightness_detection_enabled
+    data = request.get_json(force=True)
+    if "enabled" in data:
+        _brightness_detection_enabled = bool(data["enabled"])
+        print(f"Brightness detection {'enabled' if _brightness_detection_enabled else 'disabled'}")
+        return jsonify({"success": True, "enabled": _brightness_detection_enabled})
+    return jsonify({"success": False, "error": "missing enabled parameter"}), 400
+
+@app.route("/brightness_status")
+def brightness_status():
+    """Get current brightness detection status"""
+    global _brightness_detection_enabled
+    return jsonify({"enabled": _brightness_detection_enabled})
+
 @app.route("/log")
 def log():
     """
@@ -194,20 +220,100 @@ def log():
     rows = db.get_recent_logs(limit=10)
     for r in rows:
         r['image_path'] = r['image_path'].replace('\\\\', '/').replace('\\', '/')
-    # 简单表格展示
+    # 简单表格展示，包含亮度检测开关
     html = """
-    <h2>最近 10 次检测记录（已自动清理旧记录）</h2>
-    <table border="1" cellpadding="5">
-      <tr><th>时间</th><th>图片</th><th>有猫</th><th>错误</th></tr>
-      {% for r in rows %}
-      <tr>
-        <td>{{ r.ts }}</td>
-        <td><img src="{{ r.image_path }}" width="200"></td>
-        <td>{{ "✔" if r.cat else "✘" }}</td>
-        <td>{{ r.error or "-" }}</td>
-      </tr>
-      {% endfor %}
-    </table>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>猫检测记录</title>
+        <meta charset="utf-8">
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; }
+            .toggle-container { margin: 20px 0; padding: 15px; background: #f0f0f0; border-radius: 5px; }
+            .toggle-switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+            .toggle-switch input { opacity: 0; width: 0; height: 0; }
+            .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+            .slider:before { position: absolute; content: ""; height: 26px; width: 26px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+            input:checked + .slider { background-color: #2196F3; }
+            input:checked + .slider:before { transform: translateX(26px); }
+            table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+            th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+            th { background-color: #f2f2f2; }
+            img { max-width: 200px; height: auto; }
+        </style>
+    </head>
+    <body>
+        <h2>猫检测系统控制面板</h2>
+        
+        <div class="toggle-container">
+            <h3>亮度检测控制</h3>
+            <label class="toggle-switch">
+                <input type="checkbox" id="brightnessToggle" onchange="toggleBrightness()">
+                <span class="slider"></span>
+            </label>
+            <span id="toggleStatus">亮度检测: 启用</span>
+        </div>
+        
+        <h3>最近 10 次检测记录（已自动清理旧记录）</h3>
+        <table>
+            <tr><th>时间</th><th>图片</th><th>有猫</th><th>错误</th></tr>
+            {% for r in rows %}
+            <tr>
+                <td>{{ r.ts }}</td>
+                <td><img src="{{ r.image_path }}" width="200"></td>
+                <td>{{ "✔" if r.cat else "✘" }}</td>
+                <td>{{ r.error or "-" }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        
+        <script>
+            // 页面加载时获取当前状态
+            window.onload = function() {
+                fetch('/brightness_status')
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('brightnessToggle').checked = data.enabled;
+                        updateStatusText(data.enabled);
+                    })
+                    .catch(error => console.error('Error:', error));
+            };
+            
+            function toggleBrightness() {
+                const toggle = document.getElementById('brightnessToggle');
+                const enabled = toggle.checked;
+                
+                fetch('/toggle_brightness', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({enabled: enabled})
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        updateStatusText(data.enabled);
+                        console.log('Brightness detection ' + (data.enabled ? 'enabled' : 'disabled'));
+                    } else {
+                        console.error('Failed to toggle brightness detection');
+                        toggle.checked = !enabled; // 恢复原状态
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    toggle.checked = !enabled; // 恢复原状态
+                });
+            }
+            
+            function updateStatusText(enabled) {
+                const statusText = document.getElementById('toggleStatus');
+                statusText.textContent = '亮度检测: ' + (enabled ? '启用' : '禁用');
+                statusText.style.color = enabled ? 'green' : 'red';
+            }
+        </script>
+    </body>
+    </html>
     """
     return render_template_string(html, rows=rows)
 
