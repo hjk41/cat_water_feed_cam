@@ -84,16 +84,48 @@ def resize_image_if_needed(image_bytes: bytes, max_size: int = 640) -> bytes:
 
 from typing import Tuple
 
+def calculate_image_brightness(image_bytes: bytes) -> float:
+    """
+    Calculate the average brightness of an image.
+    Returns a value between 0-255 where 0 is completely dark and 255 is completely bright.
+    """
+    try:
+        # Decode image from bytes
+        nparr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        
+        if img is None:
+            return 0.0
+        
+        # Convert to grayscale for brightness calculation
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+        # Calculate mean brightness
+        brightness = np.mean(gray)
+        
+        return float(brightness)
+        
+    except Exception as e:
+        print(f"Error calculating brightness: {e}")
+        return 0.0
+
+def is_image_too_dark(brightness: float, threshold: float = 30.0) -> bool:
+    """
+    Determine if an image is too dark based on brightness threshold.
+    Default threshold is 30 (0-255 scale).
+    """
+    return brightness < threshold
+
 @app.route("/detect", methods=["POST"])
 def detect():
     """
     接收 JSON {image: base64}
-    返回 JSON {cat: true/false}
+    返回 JSON {cat: true/false, too_dark: true/false, brightness: float}
     并落库
     """
     data = request.get_json(force=True)
     if not data or "image" not in data:
-        return jsonify({"cat": False, "error": "missing image"}), 400
+        return jsonify({"cat": False, "too_dark": False, "error": "missing image"}), 400
     b64 = data["image"]
     
     # 调整图片尺寸 - 最大尺寸640像素，保持宽高比
@@ -105,6 +137,25 @@ def detect():
     except Exception as e:
         resized_b64 = b64  # 如果调整失败，使用原图
         resized_bytes = base64.b64decode(b64)
+    
+    # 计算图片亮度
+    brightness = calculate_image_brightness(resized_bytes)
+    too_dark = is_image_too_dark(brightness)
+    
+    # 如果图片太暗，直接返回too_dark=true，不进行猫检测
+    if too_dark:
+        print(f"Image too dark (brightness: {brightness:.2f}) - skipping cat detection")
+        # 存图 - 使用递增序列ID
+        img_id = get_next_image_id()
+        img_name = f"{img_id:06d}.jpg"  # 6位数字，如 000001.jpg, 000002.jpg
+        img_path = STATIC_DIR / img_name
+        try:
+            with open(img_path, "wb") as f:
+                f.write(resized_bytes)
+        except Exception as e:
+            err = str(e)
+        db.insert_record(str(app.static_url_path + "/" + img_name), False, f"Image too dark (brightness: {brightness:.2f})")
+        return jsonify({"cat": False, "too_dark": True, "brightness": brightness})
     
     # 使用调整后的图片进行检测
     cat, err = paddle_has_cat(resized_b64)
@@ -119,7 +170,7 @@ def detect():
     except Exception as e:
         err = str(e)
     db.insert_record(str(app.static_url_path + "/" + img_name), cat, err)
-    return jsonify({"cat": cat})
+    return jsonify({"cat": cat, "too_dark": False, "brightness": brightness})
 
 @app.route("/log")
 def log():

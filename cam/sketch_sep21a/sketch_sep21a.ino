@@ -18,6 +18,7 @@
 #define LED_GPIO   4  // ESP32-CAM onboard LED
 int faucet_control_pos = 12;
 int faucet_control_neg = 13;
+int PIR_ON_IND = 14;
 // ===========================================================
 
 // AI-Thinker 引脚映射
@@ -45,6 +46,13 @@ enum FaucetAction {
   TURN_OFF
 };
 
+enum DetectionResult {
+  CAT_DETECTED,    // Cat was detected by server
+  IMAGE_TOO_DARK,  // Image is too dark to analyze
+  NO_CAT,          // No cat detected
+  ERROR            // Network/camera error
+};
+
 // LED control with brightness setting
 void setLEDBrightness(int brightness) {
   if (brightness > 0) {
@@ -55,6 +63,7 @@ void setLEDBrightness(int brightness) {
     analogWrite(LED_GPIO, 0);  // Also set PWM to 0 to ensure it's off
   }
 }
+
 
 
 // Function to manually adjust white balance if needed
@@ -98,9 +107,11 @@ void setup() {
   pinMode(LED_GPIO, OUTPUT);
   pinMode(faucet_control_pos, OUTPUT);
   pinMode(faucet_control_neg, OUTPUT);
+  pinMode(PIR_ON_IND, OUTPUT);
+  digitalWrite(PIR_ON_IND, LOW);
   digitalWrite(faucet_control_pos, LOW);
   digitalWrite(faucet_control_neg, LOW);
-  setLEDBrightness(0);  // Start with LED off
+  setLEDBrightness(1);
   SetFaucet(TURN_OFF);
   
   Serial.println("GPIO pins configured");
@@ -121,8 +132,6 @@ void setup() {
     Serial.println("\nWiFi connection failed - continuing anyway");
   }
   
-  // Set LED to off initially
-  setLEDBrightness(0);  // LED off
   Serial.println("WiFi setup complete - LED set to off");
 
   // 摄像头初始化
@@ -211,26 +220,27 @@ void setCameraFlip() {
   }
 }
 
-// 拍照 → base64 → POST JSON → 解析结果
-bool detectCat() {
+// 拍照 → base64 → POST JSON → 解析结果（包含亮度检测）
+// 返回检测结果：CAT_DETECTED, IMAGE_TOO_DARK, NO_CAT, ERROR
+DetectionResult detectCat() {
   Serial.println("Starting detection");
   
   // Check WiFi connection before proceeding
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("WiFi not connected - skipping detection");
-    return false;
+    Serial.println("WiFi not connected - treating as error");
+    return ERROR;  // 网络断开时返回错误
   }
   
   adjustWhiteBalance();
   camera_fb_t* fb = esp_camera_fb_get();
   if (!fb) {
-    Serial.println("Camera capture failed");
-    return false;
+    Serial.println("Camera capture failed - treating as error");
+    return ERROR;  // 摄像头失败时返回错误
   }
   
   Serial.printf("Captured image: %dx%d, %d bytes\n", fb->width, fb->height, fb->len);
   
-  // Small delay to allow camera to adjust white balance
+  // Small delay to allow camera to adjust white balance and stabilize
   delay(100);
   
   String b64 = base64::encode(fb->buf, fb->len);
@@ -244,18 +254,27 @@ bool detectCat() {
   
   Serial.println("Sending request to server...");
   int code = http.POST(body);
-  bool cat = false;
+  DetectionResult result = NO_CAT;
   if (code == 200) {
     String payload = http.getString();
     Serial.println("Server response: " + payload);
-    cat = (payload.indexOf("\"cat\":true") >= 0);
+    
+    // Parse server response for cat detection and brightness
+    if (payload.indexOf("\"cat\":true") >= 0) {
+      result = CAT_DETECTED;
+    } else if (payload.indexOf("\"too_dark\":true") >= 0) {
+      result = IMAGE_TOO_DARK;
+    } else {
+      result = NO_CAT;
+    }
   } else {
-    Serial.printf("Server error %d\n", code);
+    Serial.printf("Server error %d - treating as error\n", code);
+    result = ERROR;  // 服务器错误时返回错误
   }
   http.end();
   
   Serial.println("Detection complete");
-  return cat;
+  return result;
 }
 
 void loop() {
@@ -264,50 +283,62 @@ void loop() {
 
   loopCount++;
   if (loopCount % 100 == 0) {  // Print status every 5 seconds
-    Serial.printf("Loop running... PIR: %d, WiFi: %d\n", digitalRead(PIR_GPIO), WiFi.status());
+    Serial.printf("Loop running... PIR: %d, WiFi: %d\n", 
+                  digitalRead(PIR_GPIO), WiFi.status());
   }
 
   // Check for PIR sensor trigger
   bool pirTriggered = (digitalRead(PIR_GPIO) == HIGH);
+  Serial.printf("PIR: %d\n", pirTriggered);
 
   if (pirTriggered) {
+    digitalWrite(PIR_ON_IND, true);
     lastTriggerTime = millis();
-    Serial.println("PIR triggered → entering detection loop");
+    Serial.println("PIR triggered → starting detection");
     
-    // Turn on LED at maximum brightness when entering detection loop
-    setLEDBrightness(2);  // Maximum brightness (0-255)
-    Serial.println("LED set to maximum brightness");
+    // Perform single detection
+    DetectionResult result = detectCat();
     
-    // Detection loop - runs every 10 seconds until no cat detected
-    int detectionCount = 0;
-    while (true) {
-      detectionCount++;
-      Serial.printf("Detection attempt #%d\n", detectionCount);
+    if (result == CAT_DETECTED) {
+      Serial.println("Cat detected → entering detection loop");
       
-      bool hasCat = detectCat();
-      if (hasCat) {
-        // Turn on water fountain
-        SetFaucet(TURN_ON);
-        Serial.println("Cat found → keep ON");
-      } else {
-        // Turn off water fountain
-        SetFaucet(TURN_OFF);
-        Serial.println("No cat → exit detection loop");
-        break;  // Exit detection loop when no cat detected
+      // Detection loop - runs every 10 seconds until no cat detected
+      int detectionCount = 0;
+      while (true) {
+        detectionCount++;
+        Serial.printf("Detection attempt #%d\n", detectionCount);
+        
+        DetectionResult loopResult = detectCat();
+        if (loopResult == CAT_DETECTED) {
+          // Turn on water fountain
+          SetFaucet(TURN_ON);
+          Serial.println("Cat found → keep ON");
+        } else {
+          // Turn off water fountain
+          SetFaucet(TURN_OFF);
+          Serial.println("No cat → exit detection loop");
+          break;  // Exit detection loop when no cat detected
+        }
+        
+        Serial.println("Waiting 10 seconds before next detection...");
+        delay(10000);  // Wait 10 seconds before next detection
       }
-      
-      Serial.println("Waiting 10 seconds before next detection...");
-      delay(10000);  // Wait 10 seconds before next detection
+      Serial.println("Exited detection loop");
+    } else if (result == IMAGE_TOO_DARK || result == ERROR) {
+      Serial.println("Image too dark or server error → turning on faucet for 60 seconds");
+      SetFaucet(TURN_ON);
+      delay(60000);
+      SetFaucet(TURN_OFF);
+    } else {  // NO_CAT
+      Serial.println("No cat detected → faucet OFF");
+      SetFaucet(TURN_OFF);
     }
-
-    Serial.println("Exited detection loop");
   }
   else {
+    digitalWrite(PIR_ON_IND, false);
     // Turn off faucet if no trigger for 30 seconds
     if (millis() - lastTriggerTime > 30000) {
       SetFaucet(TURN_OFF);
-      // Turn off LED when exiting detection loop
-      setLEDBrightness(0);
       Serial.println("No PIR trigger for 30s → faucet OFF");
     }
   }
