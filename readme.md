@@ -1,217 +1,267 @@
-# 智能猫咪饮水器 (Smart Cat Water Feeder)
+# Smart Cat Water Feeder
 
-一个基于ESP32-CAM和AI检测的自动猫咪饮水器系统，能够智能识别猫咪并自动控制饮水机开关。
+An intelligent cat water feeder system based on ESP32-CAM and AI detection that can automatically identify cats and control the water dispenser.
 
-## 项目概述
+## Project Overview
 
-这个项目包含两个主要组件：
-- **ESP32-CAM模块**：负责红外感应、拍照和饮水机控制
-- **服务器模块**：负责AI图像识别和检测记录管理
+This project consists of two main components:
+- **ESP32-CAM Module**: Handles PIR sensing, image capture, and water dispenser control
+- **Server Module**: Handles AI image recognition and detection record management
 
-## 系统架构
+## System Architecture
 
 ```
-ESP32-CAM (硬件) ←→ WiFi ←→ Flask服务器 (AI检测)
+ESP32-CAM (Hardware) ←→ WiFi ←→ Flask Server (AI Detection)
      ↓
-PIR传感器 → 拍照 → 发送图片 → AI检测 → 控制饮水机
+PIR Sensor → Capture Image → Send Image → AI Detection → Control Water Dispenser
 ```
 
-## 功能特性
+## Features
 
-- 🔍 **智能检测**：使用PaddleClas AI模型识别猫咪
-- 📸 **自动拍照**：PIR传感器触发后每10秒拍照检测
-- 💧 **自动控制**：检测到猫咪时自动开启饮水机
-- 📊 **记录管理**：自动保存检测记录和图片
-- 🧹 **自动清理**：只保留最近10条记录，自动清理旧数据
-- 🌐 **Web界面**：通过浏览器查看检测历史
+- 🔍 **Smart Detection**: Uses PaddleClas AI model to identify cats
+- 📸 **Auto Capture**: Takes photos every 10 seconds after PIR sensor trigger
+- 💧 **Auto Control**: Automatically turns on water dispenser when cat is detected
+- 🌙 **Dark Image Detection**: Automatically detects and skips processing of dark images
+- 🔄 **Toggle Control**: Web-based toggle switch to enable/disable brightness detection
+- 📊 **Record Management**: Automatically saves detection records and images
+- 🧹 **Auto Cleanup**: Keeps only the latest 10 records, automatically cleans old data
+- 🌐 **Web Interface**: View detection history through browser with control panel
 
-## 硬件要求
+## Hardware Requirements
 
-### ESP32-CAM模块
-- ESP32-CAM开发板
-- PIR红外传感器 (接GPIO15)
-- 饮水机继电器控制模块 (接GPIO12,13)
-- LED指示灯 (使用板载LED，GPIO4)
+### ESP32-CAM Module
+- ESP32-CAM development board
+- PIR infrared sensor (connected to GPIO15)
+- Water dispenser relay control module (connected to GPIO12,13)
+- LED indicator (using onboard LED, GPIO4)
 
-### 接线说明
+### Chassis Design
+A custom chassis has been designed in OnShape to house the ESP32-CAM and HC-SR501 PIR detector:
+**[OnShape Chassis Design](https://cad.onshape.com/documents/1c71ee66375d04679ef608ec/v/df9be5f772127def05042a16/e/46879c1adbf0714d15114029?renderMode=0&uiState=68e72e921494860b01941a11)**
+
+### Wiring Diagram
 ```
-PIR传感器 → GPIO15 (上拉输入)
-饮水机正极控制 → GPIO12
-饮水机负极控制 → GPIO13
-LED指示灯 → GPIO4 (板载LED)
+PIR Sensor → GPIO15 (pull-up input)
+Water Dispenser Positive Control → GPIO12
+Water Dispenser Negative Control → GPIO13
+LED Indicator → GPIO4 (onboard LED)
 ```
 
-## 软件要求
+## Software Requirements
 
-### ESP32-CAM端
+### ESP32-CAM Side
 - Arduino IDE
-- ESP32开发板支持包
-- 所需库：WiFi, HTTPClient, base64
+- ESP32 board support package
+- Required libraries: WiFi, HTTPClient, base64
 
-### 服务器端
+### Server Side
 - Python 3.7+
 - Flask 2.3.3
 - PaddlePaddle 2.6.2
 - PaddleClas
 - OpenCV
 
-## 安装和配置
+## Installation and Configuration
 
-### 1. ESP32-CAM配置
+### 1. ESP32-CAM Configuration
 
-1. 安装Arduino IDE和ESP32开发板支持包
-2. 安装所需库：
+1. Install Arduino IDE and ESP32 board support package
+2. Install required libraries:
    ```
-   WiFi (ESP32内置)
-   HTTPClient (ESP32内置)
-   base64 (ESP32内置)
+   WiFi (built-in ESP32)
+   HTTPClient (built-in ESP32)
+   base64 (built-in ESP32)
    ```
-3. 创建`wifi_config.h`文件，配置WiFi信息：
+3. Create `wifi_config.h` file and configure WiFi information:
    ```cpp
-   const char* ssid = "你的WiFi名称";
-   const char* password = "你的WiFi密码";
-   const char* serverUrl = "http://服务器IP:8099/detect";
+   const char* ssid = "Your WiFi Name";
+   const char* password = "Your WiFi Password";
+   const char* serverUrl = "http://Server IP:8099/detect";
    ```
-4. 上传代码到ESP32-CAM
+4. Upload code to ESP32-CAM
 
-### 2. 服务器配置
+### 2. Server Configuration
 
-1. 安装Python依赖：
+1. Install Python dependencies:
    ```bash
    cd server
    pip install -r requirements.txt
    ```
 
-2. 初始化数据库：
+2. Initialize database:
    ```bash
    python database.py
    ```
 
-3. 启动服务器：
+3. Start server:
    ```bash
    python app.py
    ```
 
-服务器将在`http://0.0.0.0:8099`启动
+Server will start at `http://0.0.0.0:8099`
 
-## 使用方法
+## Usage
 
-### 启动系统
-1. 确保ESP32-CAM和服务器在同一WiFi网络
-2. 启动Flask服务器
-3. 给ESP32-CAM上电
-4. 系统将自动开始工作
+### Starting the System
+1. Ensure ESP32-CAM and server are on the same WiFi network
+2. Start Flask server
+3. Power on ESP32-CAM
+4. System will automatically start working
 
-### 工作流程
-1. PIR传感器检测到运动
-2. ESP32-CAM拍照并发送到服务器
-3. 服务器使用AI模型检测图片中是否有猫
-4. 如果检测到猫，开启饮水机；否则关闭
-5. 每10秒重复检测，直到没有检测到猫
-6. 记录保存到数据库和静态文件
+### Workflow
+1. PIR sensor detects movement
+2. ESP32-CAM captures image and sends to server
+3. Server uses AI model to detect if there's a cat in the image
+4. If cat is detected, turn on water dispenser; otherwise turn off
+5. Repeat detection every 10 seconds until no cat is detected
+6. Records are saved to database and static files
 
-### 查看检测记录
-访问 `http://服务器IP:8099/log` 查看最近的检测记录
+### Viewing Detection Records
+Visit `http://Server IP:8099/log` to view recent detection records
 
-## API接口
+## API Endpoints
 
 ### POST /detect
-接收图片并返回检测结果
+Receives image and returns detection result
 
-**请求格式：**
+**Request Format:**
 ```json
 {
-  "image": "base64编码的图片数据"
+  "image": "base64 encoded image data"
 }
 ```
 
-**响应格式：**
+**Response Format:**
 ```json
 {
-  "cat": true/false
+  "cat": true/false,
+  "too_dark": true/false,
+  "brightness": 0.0-255.0
+}
+```
+
+### POST /toggle_brightness
+Toggle brightness detection on/off
+
+**Request Format:**
+```json
+{
+  "enabled": true/false
+}
+```
+
+**Response Format:**
+```json
+{
+  "success": true/false,
+  "enabled": true/false
+}
+```
+
+### GET /brightness_status
+Get current brightness detection status
+
+**Response Format:**
+```json
+{
+  "enabled": true/false
 }
 ```
 
 ### GET /log
-查看检测历史记录
+View detection history records
 
-## 配置说明
+## Configuration
 
-### 检测参数
-- 检测间隔：10秒
-- 图片尺寸：最大640像素（自动调整）
-- 记录保留：最近10条记录
-- 无触发超时：30秒后关闭饮水机
+### Detection Parameters
+- Detection interval: 10 seconds
+- Image size: Maximum 640 pixels (auto-adjusted)
+- Record retention: Latest 10 records
+- No trigger timeout: Turn off water dispenser after 30 seconds
 
-### 硬件参数
-- PIR触发：高电平
-- 饮水机控制：500ms脉冲
-- LED指示：检测时亮起
+### Hardware Parameters
+- PIR trigger: High level
+- Water dispenser control: 500ms pulse
+- LED indicator: Lights up during detection
 
-## 故障排除
+### Brightness Detection
+- Default brightness threshold: 30 (0-255 scale)
+- Toggle switch available in web interface
+- When disabled, all images are processed regardless of brightness
 
-### 常见问题
+## Troubleshooting
 
-1. **WiFi连接失败**
-   - 检查WiFi配置是否正确
-   - 确保网络信号良好
+### Common Issues
 
-2. **检测不准确**
-   - 调整摄像头位置和角度
-   - 确保光线充足
-   - 检查PIR传感器灵敏度
+1. **WiFi Connection Failed**
+   - Check if WiFi configuration is correct
+   - Ensure good network signal
 
-3. **饮水机不工作**
-   - 检查继电器接线
-   - 确认饮水机电源
-   - 检查GPIO配置
+2. **Inaccurate Detection**
+   - Adjust camera position and angle
+   - Ensure adequate lighting
+   - Check PIR sensor sensitivity
 
-4. **服务器连接失败**
-   - 检查服务器IP地址
-   - 确认端口8099可访问
-   - 检查防火墙设置
+3. **Water Dispenser Not Working**
+   - Check relay wiring
+   - Confirm water dispenser power
+   - Check GPIO configuration
 
-### 调试信息
-ESP32-CAM会通过串口输出详细的调试信息，波特率115200。
+4. **Server Connection Failed**
+   - Check server IP address
+   - Confirm port 8099 is accessible
+   - Check firewall settings
 
-## 项目结构
+5. **Images Too Dark**
+   - Adjust camera position for better lighting
+   - Use the toggle switch to disable brightness detection if needed
+   - Check if camera lens is clean
+
+### Debug Information
+ESP32-CAM outputs detailed debug information through serial port at 115200 baud rate.
+
+## Project Structure
 
 ```
 cat_water_feed/
 ├── cam/
 │   └── sketch_sep21a/
-│       └── sketch_sep21a.ino    # ESP32-CAM主程序
+│       └── sketch_sep21a.ino    # ESP32-CAM main program
 ├── server/
-│   ├── app.py                   # Flask服务器主程序
-│   ├── detection.py             # AI检测模块
-│   ├── database.py              # 数据库操作
-│   ├── requirements.txt         # Python依赖
-│   ├── static/                  # 图片存储目录
-│   └── test/                    # 测试文件
-├── detect.db                    # SQLite数据库
-└── readme.md                    # 项目说明
+│   ├── app.py                   # Flask server main program
+│   ├── detection.py             # AI detection module
+│   ├── database.py              # Database operations
+│   ├── requirements.txt         # Python dependencies
+│   ├── static/                  # Image storage directory
+│   └── test/                    # Test files
+├── detect.db                    # SQLite database
+└── readme.md                    # Project documentation
 ```
 
-## 技术栈
+## Technology Stack
 
-- **硬件**：ESP32-CAM, PIR传感器, 继电器模块
-- **嵌入式**：Arduino C++, ESP32框架
-- **后端**：Python, Flask, SQLite
-- **AI**：PaddlePaddle, PaddleClas
-- **图像处理**：OpenCV, NumPy
+- **Hardware**: ESP32-CAM, PIR sensor, relay module
+- **Embedded**: Arduino C++, ESP32 framework
+- **Backend**: Python, Flask, SQLite
+- **AI**: PaddlePaddle, PaddleClas
+- **Image Processing**: OpenCV, NumPy
 
-## 许可证
+## License
 
-本项目采用MIT许可证。
+This project is licensed under the MIT License.
 
-## 贡献
+## Contributing
 
-欢迎提交Issue和Pull Request来改进这个项目！
+Issues and Pull Requests are welcome to improve this project!
 
-## 更新日志
+## Changelog
 
-- v1.0.0: 初始版本，支持基本的猫咪检测和饮水机控制
-- 支持PIR触发检测
-- 集成PaddleClas AI模型
-- 自动记录管理和清理
-- Web界面查看历史记录
+- v1.0.0: Initial version with basic cat detection and water dispenser control
+- v1.1.0: Added dark image detection and brightness toggle functionality
+  - Support for PIR trigger detection
+  - Integrated PaddleClas AI model
+  - Automatic record management and cleanup
+  - Web interface for viewing history records
+  - Dark image detection with configurable threshold
+  - Web-based toggle switch for brightness detection control
+  - Enhanced API endpoints for brightness management
