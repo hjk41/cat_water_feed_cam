@@ -70,15 +70,29 @@ void setLEDBrightness(int brightness) {
 void adjustWhiteBalance() {
   sensor_t *s = esp_camera_sensor_get();
   if (s != NULL) {
-    // Try different white balance settings
+    // Set white balance to auto
     s->set_whitebal(s, 1);  // Auto white balance
-    delay(500);
-    
-    // If still green, try manual adjustment
-    s->set_awb_gain(s, 1);
+    s->set_awb_gain(s, 1);  // Enable AWB gain
     s->set_wb_mode(s, 0);   // 0=Auto, 1=Sunny, 2=Cloudy, 3=Office, 4=Home
     
+    // Allow time for white balance to stabilize (especially important for first photo)
+    delay(1000);  // Increased delay to allow white balance to fully adjust
+    
     Serial.println("White balance adjusted");
+  }
+}
+
+// Function to set camera flip settings - must be called after white balance
+void setCameraFlip() {
+  sensor_t *s = esp_camera_sensor_get();
+  if (s != NULL) {
+    // Set both horizontal and vertical flip to achieve 180-degree rotation
+    s->set_hmirror(s, 1);  // Horizontal mirror (flip horizontally)
+    s->set_vflip(s, 1);    // Vertical flip (flip vertically)
+    delay(100);  // Small delay to ensure flip settings are applied
+    Serial.println("Camera flip settings applied (180-degree rotation)");
+  } else {
+    Serial.println("Warning: Could not get camera sensor for flip settings");
   }
 }
 
@@ -201,23 +215,7 @@ void setup() {
     Serial.println("Warning: Could not get camera sensor");
   }
   
-  // Apply camera flip settings for 180-degree rotation
-  setCameraFlip();
-  
   Serial.println("Setup complete - System ready with dim LED");
-}
-
-// Function to set camera flip settings
-void setCameraFlip() {
-  sensor_t *s = esp_camera_sensor_get();
-  if (s != NULL) {
-    // Set both horizontal and vertical flip to achieve 180-degree rotation
-    s->set_hmirror(s, 1);  // Horizontal mirror (flip horizontally)
-    s->set_vflip(s, 1);    // Vertical flip (flip vertically)
-    Serial.println("Camera flip settings applied (180-degree rotation)");
-  } else {
-    Serial.println("Warning: Could not get camera sensor for flip settings");
-  }
 }
 
 // 拍照 → base64 → POST JSON → 解析结果（包含亮度检测）
@@ -231,7 +229,13 @@ DetectionResult detectCat() {
     return ERROR;  // 网络断开时返回错误
   }
   
+  // Adjust white balance first
   adjustWhiteBalance();
+  // Then apply flip settings (must be after white balance to ensure they persist)
+  setCameraFlip();
+  // Additional delay to ensure all settings are applied before capture
+  delay(200);
+  
   camera_fb_t* fb = esp_camera_fb_get();
   if (!fb) {
     Serial.println("Camera capture failed - treating as error");
@@ -239,9 +243,6 @@ DetectionResult detectCat() {
   }
   
   Serial.printf("Captured image: %dx%d, %d bytes\n", fb->width, fb->height, fb->len);
-  
-  // Small delay to allow camera to adjust white balance and stabilize
-  delay(100);
   
   String b64 = base64::encode(fb->buf, fb->len);
   esp_camera_fb_return(fb);
@@ -325,13 +326,14 @@ void loop() {
       }
       Serial.println("Exited detection loop");
     } else if (result == IMAGE_TOO_DARK || result == ERROR) {
-      Serial.println("Image too dark or server error → turning on faucet for 60 seconds");
+      Serial.println("Image too dark or server error → turning on faucet for 30 seconds");
       SetFaucet(TURN_ON);
-      delay(60000);
+      delay(30000);
       SetFaucet(TURN_OFF);
     } else {  // NO_CAT
       Serial.println("No cat detected → faucet OFF");
       SetFaucet(TURN_OFF);
+      delay(5000);
     }
   }
   else {
