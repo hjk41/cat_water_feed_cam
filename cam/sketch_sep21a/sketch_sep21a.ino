@@ -121,7 +121,7 @@ void setup() {
   WiFi.begin(ssid, password);
   int wifiAttempts = 0;
   while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20) {
-    delay(500);
+    delay(1000);
     Serial.print(".");
     wifiAttempts++;
   }
@@ -156,7 +156,7 @@ void setup() {
   config.pin_reset = RESET_GPIO_NUM;
   config.xclk_freq_hz = 20000000;
   config.pixel_format = PIXFORMAT_JPEG;
-  config.frame_size = FRAMESIZE_VGA;   // 640×480
+  config.frame_size = FRAMESIZE_QVGA;   // 320×240
   config.jpeg_quality = 12;
   config.fb_count = 1;
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;

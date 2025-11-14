@@ -131,10 +131,10 @@ def detect():
         return jsonify({"cat": False, "too_dark": False, "error": "missing image"}), 400
     b64 = data["image"]
     
-    # 调整图片尺寸 - 最大尺寸640像素，保持宽高比
+    # 调整图片尺寸 - 最大尺寸320像素，保持宽高比
     try:
         image_bytes = base64.b64decode(b64)
-        resized_bytes = resize_image_if_needed(image_bytes, max_size=640)
+        resized_bytes = resize_image_if_needed(image_bytes, max_size=320)
         # 将调整后的图片重新编码为base64用于检测
         resized_b64 = base64.b64encode(resized_bytes).decode('utf-8')
     except Exception as e:
