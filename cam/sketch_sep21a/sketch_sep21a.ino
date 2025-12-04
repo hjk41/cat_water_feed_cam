@@ -11,6 +11,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <base64.h>
+#include <ArduinoOTA.h>
 
 #include "wifi_config.h"
 
@@ -109,6 +110,15 @@ void SetFaucet(FaucetAction action) {
   digitalWrite(faucet_control_neg, LOW);
 }
 
+// Non-blocking delay that allows OTA updates during wait
+void delayWithOTA(unsigned long ms) {
+  unsigned long start = millis();
+  while (millis() - start < ms) {
+    ArduinoOTA.handle();
+    delay(10);
+  }
+}
+
 
 camera_config_t config;
 
@@ -142,6 +152,15 @@ void setup() {
   
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("\nWiFi connected");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+    
+    // Initialize OTA
+    ArduinoOTA.setHostname("esp32-cam-cat-feeder");
+    // ArduinoOTA.setPassword("admin");  // Optional: uncomment to set password
+    
+    ArduinoOTA.begin();
+    Serial.println("OTA ready");
   } else {
     Serial.println("\nWiFi connection failed - continuing anyway");
   }
@@ -279,6 +298,9 @@ DetectionResult detectCat() {
 }
 
 void loop() {
+  // Handle OTA updates (must be called regularly)
+  ArduinoOTA.handle();
+  
   static unsigned long lastTriggerTime = 0;
   static unsigned long loopCount = 0;
 
@@ -322,18 +344,18 @@ void loop() {
         }
         
         Serial.println("Waiting 10 seconds before next detection...");
-        delay(10000);  // Wait 10 seconds before next detection
+        delayWithOTA(10000);  // Wait 10 seconds before next detection
       }
       Serial.println("Exited detection loop");
     } else if (result == IMAGE_TOO_DARK || result == ERROR) {
       Serial.println("Image too dark or server error → turning on faucet for 30 seconds");
       SetFaucet(TURN_ON);
-      delay(30000);
+      delayWithOTA(30000);
       SetFaucet(TURN_OFF);
     } else {  // NO_CAT
       Serial.println("No cat detected → faucet OFF");
       SetFaucet(TURN_OFF);
-      delay(5000);
+      delayWithOTA(1000);
     }
   }
   else {
@@ -345,5 +367,5 @@ void loop() {
     }
   }
   
-  delay(2000);  // Small delay to avoid busy looping
+  delayWithOTA(2000);  // Small delay to avoid busy looping
 }
