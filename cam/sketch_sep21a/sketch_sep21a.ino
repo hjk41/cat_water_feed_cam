@@ -111,9 +111,37 @@ void SetFaucet(FaucetAction action) {
 }
 
 // Non-blocking delay that allows OTA updates during wait
+// Also checks WiFi connection and reconnects if needed
 void delayWithOTA(unsigned long ms) {
   unsigned long start = millis();
   while (millis() - start < ms) {
+    // Check WiFi connection and reconnect if needed
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi disconnected, attempting to reconnect...");
+      WiFi.disconnect();
+      WiFi.begin(ssid, password);
+      
+      int reconnectAttempts = 0;
+      while (WiFi.status() != WL_CONNECTED && reconnectAttempts < 2) {
+        delay(500);
+        Serial.print(".");
+        reconnectAttempts++;
+      }
+      
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nWiFi reconnected");
+        Serial.print("IP address: ");
+        Serial.println(WiFi.localIP());
+        
+        // Reinitialize OTA after reconnection
+        ArduinoOTA.setHostname("esp32-cam-cat-feeder");
+        ArduinoOTA.begin();
+        Serial.println("OTA reinitialized");
+      } else {
+        Serial.println("\nWiFi reconnection failed");
+      }
+    }
+    
     ArduinoOTA.handle();
     delay(10);
   }
@@ -297,10 +325,7 @@ DetectionResult detectCat() {
   return result;
 }
 
-void loop() {
-  // Handle OTA updates (must be called regularly)
-  ArduinoOTA.handle();
-  
+void loop() {  
   static unsigned long lastTriggerTime = 0;
   static unsigned long loopCount = 0;
 
@@ -355,7 +380,7 @@ void loop() {
     } else {  // NO_CAT
       Serial.println("No cat detected → faucet OFF");
       SetFaucet(TURN_OFF);
-      delayWithOTA(1000);
+      delayWithOTA(500);
     }
   }
   else {
@@ -363,9 +388,10 @@ void loop() {
     // Turn off faucet if no trigger for 30 seconds
     if (millis() - lastTriggerTime > 30000) {
       SetFaucet(TURN_OFF);
+      lastTriggerTime = millis();
       Serial.println("No PIR trigger for 30s → faucet OFF");
     }
   }
   
-  delayWithOTA(2000);  // Small delay to avoid busy looping
+  delayWithOTA(1000);  // Small delay to avoid busy looping
 }
