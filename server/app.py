@@ -122,7 +122,7 @@ def is_image_too_dark(brightness: float, threshold: float = 30.0) -> bool:
 @app.route("/detect", methods=["POST"])
 def detect():
     """
-    接收 JSON {image: base64, line_number: int (optional)}
+    接收 JSON {image: base64, message: string (optional)}
     返回 JSON {cat: true/false, too_dark: true/false, brightness: float}
     并落库
     """
@@ -130,11 +130,11 @@ def detect():
     if not data or "image" not in data:
         return jsonify({"cat": False, "too_dark": False, "error": "missing image"}), 400
     b64 = data["image"]
-    line_number = data.get("line_number", 0)  # Get line number if provided
+    esp32_message = data.get("message", "")  # Get message from ESP32 if provided
     
-    # Always display line number if provided
-    if line_number > 0:
-        print(f"[ESP32] detectCat() called from line {line_number}")
+    # Display message if provided
+    if esp32_message:
+        print(f"[ESP32] Message: {esp32_message}")
     
     # 调整图片尺寸 - 最大尺寸320像素，保持宽高比
     try:
@@ -159,8 +159,8 @@ def detect():
     # 如果图片太暗，直接返回too_dark=true，不进行猫检测
     if too_dark:
         error_msg = f"Image too dark (brightness: {brightness:.2f})"
-        if line_number > 0:
-            print(f"{error_msg} - called from line {line_number} - skipping cat detection")
+        if esp32_message:
+            print(f"{error_msg} - {esp32_message} - skipping cat detection")
         else:
             print(f"{error_msg} - skipping cat detection")
         # 存图 - 使用递增序列ID
@@ -172,19 +172,19 @@ def detect():
                 f.write(resized_bytes)
         except Exception as e:
             err = str(e)
-        # Always include line number in error_detail if provided
-        error_detail = error_msg
-        if line_number > 0:
-            error_detail += f" (line {line_number})"
-        db.insert_record(str(app.static_url_path + "/" + img_name), False, error_detail)
+        # Build message: append ESP32 message to error message
+        message = error_msg
+        if esp32_message:
+            message += " | " + esp32_message
+        db.insert_record(str(app.static_url_path + "/" + img_name), False, message)
         return jsonify({"cat": False, "too_dark": True, "brightness": brightness})
     
     # 使用调整后的图片进行检测
     cat, err = paddle_has_cat(resized_b64)
     
-    # Always display detection result with line number if provided
-    if line_number > 0:
-        print(f"[ESP32] Detection result: cat={cat}, line={line_number}")
+    # Always display detection result
+    if esp32_message:
+        print(f"[ESP32] Detection result: cat={cat}, message={esp32_message}")
     else:
         print(f"[ESP32] Detection result: cat={cat}")
     
@@ -198,15 +198,15 @@ def detect():
     except Exception as e:
         err = str(e)
     
-    # Always include line number in error_detail if provided
-    error_detail = err if err else ""
-    if line_number > 0:
-        if error_detail:
-            error_detail += f" (line {line_number})"
+    # Build message: start with error (if any), then append ESP32 message
+    message = err if err else ""
+    if esp32_message:
+        if message:
+            message += " | " + esp32_message
         else:
-            error_detail = f"line {line_number}"
+            message = esp32_message
     
-    db.insert_record(str(app.static_url_path + "/" + img_name), cat, error_detail)
+    db.insert_record(str(app.static_url_path + "/" + img_name), cat, message)
     return jsonify({"cat": cat, "too_dark": False, "brightness": brightness})
 
 @app.route("/toggle_brightness", methods=["POST"])
@@ -284,7 +284,7 @@ def log():
         
         <h3>最近 10 次检测记录（已自动清理旧记录）</h3>
         <table>
-            <tr><th>时间</th><th>图片</th><th>有猫</th><th>错误</th></tr>
+            <tr><th>时间</th><th>图片</th><th>有猫</th><th>消息</th></tr>
             {% for r in rows %}
             <tr>
                 <td>{{ r.ts }}</td>

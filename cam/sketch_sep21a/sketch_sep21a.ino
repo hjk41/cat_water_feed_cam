@@ -267,10 +267,20 @@ void setup() {
 
 // 拍照 → base64 → POST JSON → 解析结果（包含亮度检测）
 // 返回检测结果：CAT_DETECTED, IMAGE_TOO_DARK, NO_CAT, ERROR
-DetectionResult detectCat(int lineNumber = 0) {
+DetectionResult detectCat(const char* userMessage = "") {
   Serial.println("Starting detection");
-  if (lineNumber > 0) {
-    Serial.printf("Called from line: %d\n", lineNumber);
+  
+  // Build message with PIR status
+  String message = String(userMessage);
+  // Add PIR status
+  bool pirStatus = digitalRead(PIR_GPIO) == HIGH;
+  if (message.length() > 0) {
+    message += ", ";
+  }
+  message += "PIR=" + String(pirStatus ? "HIGH" : "LOW");
+  
+  if (message.length() > 0) {
+    Serial.printf("Message: %s\n", message.c_str());
   }
   
   // Check WiFi connection before proceeding
@@ -302,10 +312,13 @@ DetectionResult detectCat(int lineNumber = 0) {
   http.begin(serverUrl);
   http.addHeader("Content-Type", "application/json");
   
-  // Include line number in the request
+  // Include message in the request
   String body = "{\"image\":\"" + b64 + "\"";
-  if (lineNumber > 0) {
-    body += ",\"line_number\":" + String(lineNumber);
+  if (message.length() > 0) {
+    // Escape quotes in message for JSON
+    String escapedMessage = message;
+    escapedMessage.replace("\"", "\\\"");
+    body += ",\"message\":\"" + escapedMessage + "\"";
   }
   body += "}";
   
@@ -353,7 +366,9 @@ void loop() {
     Serial.println("PIR triggered → starting detection");
     
     // Perform single detection
-    DetectionResult result = detectCat(__LINE__);
+    char msg[100];
+    snprintf(msg, sizeof(msg), "Initial detection after PIR trigger, line=%d", __LINE__);
+    DetectionResult result = detectCat(msg);
     
     if (result == CAT_DETECTED) {
       Serial.println("Cat detected → entering detection loop");
@@ -374,7 +389,9 @@ void loop() {
         detectionCount++;
         Serial.printf("Detection attempt #%d\n", detectionCount);
         
-        DetectionResult loopResult = detectCat(__LINE__);
+        char loopMsg[100];
+        snprintf(loopMsg, sizeof(loopMsg), "Detection loop attempt #%d, line=%d", detectionCount, __LINE__);
+        DetectionResult loopResult = detectCat(loopMsg);
         if (loopResult == CAT_DETECTED) {
           catLastSeenTime = millis();
           // Turn on water fountain
@@ -397,8 +414,8 @@ void loop() {
       delayWithOTA(30000);
       SetFaucet(TURN_OFF);
     } else {  // NO_CAT
-      Serial.println("No cat detected → faucet OFF");
-      SetFaucet(TURN_OFF);
+      //Serial.println("No cat detected → faucet OFF");
+      //SetFaucet(TURN_OFF);
     }
   }
   else {
