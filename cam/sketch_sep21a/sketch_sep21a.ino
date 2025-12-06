@@ -97,19 +97,6 @@ void setCameraFlip() {
   }
 }
 
-void SetFaucet(FaucetAction action) {
-  if (action == TURN_ON) {
-    digitalWrite(faucet_control_pos, HIGH);
-    digitalWrite(faucet_control_neg, LOW);
-  } else {
-    digitalWrite(faucet_control_pos, LOW);
-    digitalWrite(faucet_control_neg, HIGH);
-  }
-  delay(faucet_delay_ms);
-  digitalWrite(faucet_control_pos, LOW);
-  digitalWrite(faucet_control_neg, LOW);
-}
-
 // Non-blocking delay that allows OTA updates during wait
 // Also checks WiFi connection and reconnects if needed
 void delayWithOTA(unsigned long ms) {
@@ -147,6 +134,22 @@ void delayWithOTA(unsigned long ms) {
   }
 }
 
+void SetFaucet(FaucetAction action, bool delay_with_ota = true) {
+  if (action == TURN_ON) {
+    digitalWrite(faucet_control_pos, HIGH);
+    digitalWrite(faucet_control_neg, LOW);
+  } else {
+    digitalWrite(faucet_control_pos, LOW);
+    digitalWrite(faucet_control_neg, HIGH);
+  }
+  if (delay_with_ota) {
+    delayWithOTA(faucet_delay_ms);
+  } else {
+    delay(faucet_delay_ms);
+  }
+  digitalWrite(faucet_control_pos, LOW);
+  digitalWrite(faucet_control_neg, LOW);
+}
 
 camera_config_t config;
 
@@ -164,7 +167,7 @@ void setup() {
   digitalWrite(faucet_control_pos, LOW);
   digitalWrite(faucet_control_neg, LOW);
   setLEDBrightness(1);
-  SetFaucet(TURN_OFF);
+  SetFaucet(TURN_OFF, false);
   
   Serial.println("GPIO pins configured");
 
@@ -414,8 +417,10 @@ void loop() {
       delayWithOTA(30000);
       SetFaucet(TURN_OFF);
     } else {  // NO_CAT
-      //Serial.println("No cat detected → faucet OFF");
-      //SetFaucet(TURN_OFF);
+      Serial.println("No cat detected → faucet OFF");
+      SetFaucet(TURN_OFF);
+      detectCat("No cat detected → faucet OFF");
+      delayWithOTA(5000);
     }
   }
   else {
