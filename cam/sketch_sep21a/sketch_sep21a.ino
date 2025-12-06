@@ -267,8 +267,11 @@ void setup() {
 
 // 拍照 → base64 → POST JSON → 解析结果（包含亮度检测）
 // 返回检测结果：CAT_DETECTED, IMAGE_TOO_DARK, NO_CAT, ERROR
-DetectionResult detectCat() {
+DetectionResult detectCat(int lineNumber = 0) {
   Serial.println("Starting detection");
+  if (lineNumber > 0) {
+    Serial.printf("Called from line: %d\n", lineNumber);
+  }
   
   // Check WiFi connection before proceeding
   if (WiFi.status() != WL_CONNECTED) {
@@ -298,7 +301,13 @@ DetectionResult detectCat() {
   http.setTimeout(10000);  // 10 second timeout
   http.begin(serverUrl);
   http.addHeader("Content-Type", "application/json");
-  String body = "{\"image\":\"" + b64 + "\"}";
+  
+  // Include line number in the request
+  String body = "{\"image\":\"" + b64 + "\"";
+  if (lineNumber > 0) {
+    body += ",\"line_number\":" + String(lineNumber);
+  }
+  body += "}";
   
   Serial.println("Sending request to server...");
   int code = http.POST(body);
@@ -340,24 +349,34 @@ void loop() {
   Serial.printf("PIR: %d\n", pirTriggered);
 
   if (pirTriggered) {
-    digitalWrite(PIR_ON_IND, true);
     lastTriggerTime = millis();
     Serial.println("PIR triggered → starting detection");
     
     // Perform single detection
-    DetectionResult result = detectCat();
+    DetectionResult result = detectCat(__LINE__);
     
     if (result == CAT_DETECTED) {
       Serial.println("Cat detected → entering detection loop");
       
-      // Detection loop - runs every 10 seconds until no cat detected
+      // Detection loop, detect cat every 10 seconds until the cat leaves for 30 seconds
+      unsigned long catLastSeenTime = millis();
+      const unsigned long MAX_NO_CAT_DURATION = 30000;
       int detectionCount = 0;
+      
       while (true) {
+        // Check if 120 seconds have elapsed
+        if (millis() - catLastSeenTime >= MAX_NO_CAT_DURATION) {
+          Serial.println("Maximum no cat duration (30s) reached → exit detection loop");
+          SetFaucet(TURN_OFF);
+          break;
+        }
+        
         detectionCount++;
         Serial.printf("Detection attempt #%d\n", detectionCount);
         
-        DetectionResult loopResult = detectCat();
+        DetectionResult loopResult = detectCat(__LINE__);
         if (loopResult == CAT_DETECTED) {
+          catLastSeenTime = millis();
           // Turn on water fountain
           SetFaucet(TURN_ON);
           Serial.println("Cat found → keep ON");
@@ -380,11 +399,9 @@ void loop() {
     } else {  // NO_CAT
       Serial.println("No cat detected → faucet OFF");
       SetFaucet(TURN_OFF);
-      delayWithOTA(500);
     }
   }
   else {
-    digitalWrite(PIR_ON_IND, false);
     // Turn off faucet if no trigger for 30 seconds
     if (millis() - lastTriggerTime > 30000) {
       SetFaucet(TURN_OFF);

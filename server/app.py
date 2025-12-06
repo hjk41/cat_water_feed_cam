@@ -122,7 +122,7 @@ def is_image_too_dark(brightness: float, threshold: float = 30.0) -> bool:
 @app.route("/detect", methods=["POST"])
 def detect():
     """
-    接收 JSON {image: base64}
+    接收 JSON {image: base64, line_number: int (optional)}
     返回 JSON {cat: true/false, too_dark: true/false, brightness: float}
     并落库
     """
@@ -130,6 +130,11 @@ def detect():
     if not data or "image" not in data:
         return jsonify({"cat": False, "too_dark": False, "error": "missing image"}), 400
     b64 = data["image"]
+    line_number = data.get("line_number", 0)  # Get line number if provided
+    
+    # Always display line number if provided
+    if line_number > 0:
+        print(f"[ESP32] detectCat() called from line {line_number}")
     
     # 调整图片尺寸 - 最大尺寸320像素，保持宽高比
     try:
@@ -153,7 +158,11 @@ def detect():
     
     # 如果图片太暗，直接返回too_dark=true，不进行猫检测
     if too_dark:
-        print(f"Image too dark (brightness: {brightness:.2f}) - skipping cat detection")
+        error_msg = f"Image too dark (brightness: {brightness:.2f})"
+        if line_number > 0:
+            print(f"{error_msg} - called from line {line_number} - skipping cat detection")
+        else:
+            print(f"{error_msg} - skipping cat detection")
         # 存图 - 使用递增序列ID
         img_id = get_next_image_id()
         img_name = f"{img_id:06d}.jpg"  # 6位数字，如 000001.jpg, 000002.jpg
@@ -163,11 +172,21 @@ def detect():
                 f.write(resized_bytes)
         except Exception as e:
             err = str(e)
-        db.insert_record(str(app.static_url_path + "/" + img_name), False, f"Image too dark (brightness: {brightness:.2f})")
+        # Always include line number in error_detail if provided
+        error_detail = error_msg
+        if line_number > 0:
+            error_detail += f" (line {line_number})"
+        db.insert_record(str(app.static_url_path + "/" + img_name), False, error_detail)
         return jsonify({"cat": False, "too_dark": True, "brightness": brightness})
     
     # 使用调整后的图片进行检测
     cat, err = paddle_has_cat(resized_b64)
+    
+    # Always display detection result with line number if provided
+    if line_number > 0:
+        print(f"[ESP32] Detection result: cat={cat}, line={line_number}")
+    else:
+        print(f"[ESP32] Detection result: cat={cat}")
     
     # 存图 - 使用递增序列ID
     img_id = get_next_image_id()
@@ -178,7 +197,16 @@ def detect():
             f.write(resized_bytes)
     except Exception as e:
         err = str(e)
-    db.insert_record(str(app.static_url_path + "/" + img_name), cat, err)
+    
+    # Always include line number in error_detail if provided
+    error_detail = err if err else ""
+    if line_number > 0:
+        if error_detail:
+            error_detail += f" (line {line_number})"
+        else:
+            error_detail = f"line {line_number}"
+    
+    db.insert_record(str(app.static_url_path + "/" + img_name), cat, error_detail)
     return jsonify({"cat": cat, "too_dark": False, "brightness": brightness})
 
 @app.route("/toggle_brightness", methods=["POST"])
