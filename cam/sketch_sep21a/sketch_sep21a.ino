@@ -351,14 +351,17 @@ DetectionResult detectCat(const char* userMessage = "") {
 }
 
 void loop() {  
-  static unsigned long lastTriggerTime = 0;
-  static unsigned long loopCount = 0;
-
-  loopCount++;
-  if (loopCount % 100 == 0) {  // Print status every 5 seconds
-    Serial.printf("Loop running... PIR: %d, WiFi: %d\n", 
-                  digitalRead(PIR_GPIO), WiFi.status());
+  // Check if 24 hours have elapsed and restart if needed
+  const unsigned long RESTART_INTERVAL = 86400000;  // 24 hours in milliseconds (24 * 60 * 60 * 1000)
+  // Check if 24 hours have elapsed
+  if (millis() >= RESTART_INTERVAL) {
+    Serial.println("24 hours elapsed → restarting for system stability");
+    Serial.printf("Uptime: %lu ms (%.2f hours)\n", millis(), millis() / 3600000.0);
+    detectCat("24 hours elapsed → restarting for system stability");
+    ESP.restart();
   }
+  
+  static unsigned long lastTriggerTime = 0;
 
   // Check for PIR sensor trigger
   bool pirTriggered = (digitalRead(PIR_GPIO) == HIGH);
@@ -369,46 +372,37 @@ void loop() {
     Serial.println("PIR triggered → starting detection");
     
     // Perform single detection
-    char msg[100];
-    snprintf(msg, sizeof(msg), "Initial detection after PIR trigger, line=%d", __LINE__);
-    DetectionResult result = detectCat(msg);
+    DetectionResult result = detectCat("Initial detection after PIR trigger");
     
     if (result == CAT_DETECTED) {
       Serial.println("Cat detected → entering detection loop");
+      SetFaucet(TURN_ON);
       
-      // Detection loop, detect cat every 10 seconds until the cat leaves for 30 seconds
-      unsigned long catLastSeenTime = millis();
-      const unsigned long MAX_NO_CAT_DURATION = 30000;
-      int detectionCount = 0;
+      // Detection loop, detect cat every 10 seconds until 120 seconds elapsed or no cat detected
+      unsigned long loopStartTime = millis();
+      const unsigned long MAX_LOOP_DURATION = 120000;    // 120 seconds
       
       while (true) {
-        // Check if 120 seconds have elapsed
-        if (millis() - catLastSeenTime >= MAX_NO_CAT_DURATION) {
-          Serial.println("Maximum no cat duration (30s) reached → exit detection loop");
+        // Check if 120 seconds have elapsed since loop started
+        if (millis() - loopStartTime >= MAX_LOOP_DURATION) {
+          Serial.println("Maximum loop duration (120s) reached → exit detection loop");
           SetFaucet(TURN_OFF);
           break;
         }
         
-        detectionCount++;
-        Serial.printf("Detection attempt #%d\n", detectionCount);
-        
-        char loopMsg[100];
-        snprintf(loopMsg, sizeof(loopMsg), "Detection loop attempt #%d, line=%d", detectionCount, __LINE__);
-        DetectionResult loopResult = detectCat(loopMsg);
+        // detect cat continuously until 120 seconds elapsed or no cat detected
+        DetectionResult loopResult = detectCat("Detection loop attempt");
         if (loopResult == CAT_DETECTED) {
-          catLastSeenTime = millis();
           // Turn on water fountain
           SetFaucet(TURN_ON);
           Serial.println("Cat found → keep ON");
+          delayWithOTA(10000);  // Wait 10 seconds before next detection
         } else {
           // Turn off water fountain
           SetFaucet(TURN_OFF);
           Serial.println("No cat → exit detection loop");
           break;  // Exit detection loop when no cat detected
         }
-        
-        Serial.println("Waiting 10 seconds before next detection...");
-        delayWithOTA(10000);  // Wait 10 seconds before next detection
       }
       Serial.println("Exited detection loop");
     } else if (result == IMAGE_TOO_DARK || result == ERROR) {
@@ -419,16 +413,14 @@ void loop() {
     } else {  // NO_CAT
       Serial.println("No cat detected → faucet OFF");
       SetFaucet(TURN_OFF);
-      detectCat("No cat detected → faucet OFF");
-      delayWithOTA(5000);
     }
   }
   else {
-    // Turn off faucet if no trigger for 30 seconds
-    if (millis() - lastTriggerTime > 30000) {
+    // Turn off faucet if no trigger for 60 seconds
+    if (millis() - lastTriggerTime > 60000) {
       SetFaucet(TURN_OFF);
       lastTriggerTime = millis();
-      Serial.println("No PIR trigger for 30s → faucet OFF");
+      Serial.println("No PIR trigger for 60s → faucet OFF");
     }
   }
   
