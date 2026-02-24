@@ -1,13 +1,14 @@
 import os
 import base64
 from pathlib import Path
-from flask import Flask, request, jsonify, render_template_string, url_for
+from flask import Flask, request, jsonify, render_template, render_template_string, url_for
 import requests
 import database as db
 from dotenv import load_dotenv
 from detection import paddle_has_cat_from_b64 as paddle_has_cat
 import cv2
 import numpy as np
+from xiaomi_thermo import XiaomiThermoService
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -344,6 +345,43 @@ def log():
     </html>
     """
     return render_template_string(html, rows=rows)
+
+
+@app.route("/thermometers")
+def thermometer_dashboard():
+    return render_template("thermo_dashboard.html")
+
+
+@app.route("/api/thermometers")
+def thermometer_data():
+    service = XiaomiThermoService.from_env()
+    try:
+        return jsonify(service.get_house_readings())
+    except ValueError as exc:
+        return (
+            jsonify(
+                {
+                    "count": 0,
+                    "updated_at": None,
+                    "items": [],
+                    "error": str(exc),
+                }
+            ),
+            400,
+        )
+    except Exception as exc:
+        print(f"Failed to load thermometer data from Xiaomi cloud: {exc}")
+        return (
+            jsonify(
+                {
+                    "count": 0,
+                    "updated_at": None,
+                    "items": [],
+                    "error": "Failed to load data from Xiaomi cloud.",
+                }
+            ),
+            502,
+        )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8099, debug=False)

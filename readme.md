@@ -26,6 +26,7 @@ PIR Sensor → Capture Image → Send Image → AI Detection → Control Water D
 - 📊 **Record Management**: Automatically saves detection records and images
 - 🧹 **Auto Cleanup**: Keeps only the latest 10 records, automatically cleans old data
 - 🌐 **Web Interface**: View detection history through browser with control panel
+- 🌡️ **Climate Dashboard**: Full-screen iPad-friendly page for Xiaomi temperature/humidity sensors with 10s auto refresh
 
 ## Hardware Requirements
 
@@ -88,12 +89,22 @@ LED Indicator → GPIO4 (onboard LED)
    pip install -r requirements.txt
    ```
 
-2. Initialize database:
+2. Configure Xiaomi cloud account for thermometer dashboard (optional):
+   ```bash
+   MIIO_USERNAME=your_xiaomi_account
+   MIIO_PASSWORD=your_xiaomi_password
+   MIIO_COUNTRY=de
+   MIIO_SENSOR_MODELS=sensor_ht,weather
+   ```
+   - `MIIO_COUNTRY` is your Xiaomi cloud region, for example: `cn`, `de`, `us`, `ru`, `sg`.
+   - `MIIO_SENSOR_MODELS` is optional and can be used to append custom model keywords.
+
+3. Initialize database:
    ```bash
    python database.py
    ```
 
-3. Start server:
+4. Start server:
    ```bash
    python app.py
    ```
@@ -118,6 +129,10 @@ Server will start at `http://0.0.0.0:8099`
 
 ### Viewing Detection Records
 Visit `http://Server IP:8099/log` to view recent detection records
+
+### Viewing Home Thermometer Dashboard
+Visit `http://Server IP:8099/thermometers` to view all Xiaomi thermometer readings.
+The page refreshes automatically every 10 seconds and is optimized for full-screen browsing on iPad mini 4.
 
 ## API Endpoints
 
@@ -170,6 +185,12 @@ Get current brightness detection status
 
 ### GET /log
 View detection history records
+
+### GET /thermometers
+Open the full-screen Xiaomi thermometer dashboard page
+
+### GET /api/thermometers
+Returns current Xiaomi thermometer readings in JSON format
 
 ## Configuration
 
