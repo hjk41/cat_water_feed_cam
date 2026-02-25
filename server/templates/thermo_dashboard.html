@@ -156,9 +156,9 @@
             background: var(--card-bg);
             border: 1px solid var(--card-border);
             border-radius: 16px;
-            padding: 16px 18px;
-            display: flex; flex-direction: column;
-            justify-content: space-between;
+            padding: 18px 20px 12px;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
             backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
             transition: background 0.25s, border-color 0.25s, transform 0.2s;
             overflow: hidden;
@@ -182,62 +182,66 @@
 
         .card-top { display: flex; align-items: flex-start; justify-content: space-between; }
 
+        .card-top { align-self: start; }
+        .readings { align-self: stretch; }
+
         .room-name {
-            font-size: 13px; color: var(--text-secondary);
-            text-transform: uppercase; letter-spacing: 1px;
+            font-size: 16px; color: var(--text-secondary);
+            letter-spacing: 1.5px;
             font-weight: 500;
         }
 
         .device-name {
-            font-size: 17px; font-weight: 700;
+            font-size: 24px; font-weight: 700;
             margin-top: 4px;
             color: var(--text-primary);
             line-height: 1.2;
         }
 
         .status-dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            margin-top: 4px; flex-shrink: 0;
+            width: 10px; height: 10px; border-radius: 50%;
+            margin-top: 6px; flex-shrink: 0;
         }
 
         .status-dot.online {
             background: var(--online-color);
-            box-shadow: 0 0 8px rgba(52, 211, 153, 0.5);
+            box-shadow: 0 0 10px rgba(52, 211, 153, 0.5);
         }
 
         .status-dot.offline {
             background: var(--offline-color);
-            box-shadow: 0 0 8px rgba(248, 113, 113, 0.4);
+            box-shadow: 0 0 10px rgba(248, 113, 113, 0.4);
         }
 
         .readings {
-            display: flex; gap: 12px; margin-top: auto;
-            padding-top: 10px;
+            display: flex; gap: 14px;
+            min-height: 0;
         }
 
         .reading {
             flex: 1;
-            background: rgba(0, 0, 0, 0.15);
-            border-radius: 12px;
-            padding: 10px 0;
-            text-align: center;
+            background: rgba(0, 0, 0, 0.18);
+            border-radius: 14px;
+            padding: 12px 8px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
         }
 
         .reading-label {
-            font-size: 11px; color: var(--text-secondary);
-            text-transform: uppercase; letter-spacing: 0.8px;
+            font-size: 15px; color: var(--text-secondary);
+            letter-spacing: 1px;
             font-weight: 500;
+            margin-bottom: 8px;
         }
 
         .reading-value {
-            font-size: 28px; font-weight: 700;
-            margin-top: 4px;
+            font-size: 52px; font-weight: 700;
             font-variant-numeric: tabular-nums;
             line-height: 1;
         }
 
         .reading-unit {
-            font-size: 14px; font-weight: 400;
+            font-size: 22px; font-weight: 400;
             opacity: 0.7;
         }
 
@@ -245,10 +249,9 @@
         .reading-value.humi { color: var(--humi-color); }
 
         .card-footer {
-            display: flex; justify-content: space-between; align-items: center;
-            margin-top: 8px;
-            font-size: 11px; color: var(--text-secondary);
-            opacity: 0.6;
+            align-self: end;
+            font-size: 13px; color: var(--text-secondary);
+            opacity: 0.5;
         }
 
         .empty-state {
@@ -262,26 +265,34 @@
 
         /* ── Responsive for iPad mini 4 (1024×768) ── */
         @media (max-width: 1024px) {
-            .page { padding: 12px 16px 16px; gap: 10px; }
-            :root { --header-height: 60px; }
-            .header-title { font-size: 19px; }
-            .clock-time { font-size: 24px; }
-            .clock-date { font-size: 12px; }
-            .logo { width: 38px; height: 38px; border-radius: 10px; }
-            .logo svg { width: 20px; height: 20px; }
-            .grid { gap: 10px; }
-            .card { padding: 12px 14px; border-radius: 14px; }
-            .reading-value { font-size: 24px; }
-            .reading { padding: 8px 0; border-radius: 10px; }
+            .page { padding: 10px 12px 12px; gap: 8px; }
+            :root { --header-height: 52px; }
+            .header-title { font-size: 18px; }
+            .clock-time { font-size: 22px; }
+            .clock-date { font-size: 11px; }
+            .logo { width: 34px; height: 34px; border-radius: 10px; }
+            .logo svg { width: 18px; height: 18px; }
+            .grid { gap: 8px; }
+            .card { padding: 12px 14px 8px; border-radius: 12px; }
+            .room-name { font-size: 13px; }
+            .device-name { font-size: 19px; }
+            .reading-value { font-size: 42px; }
+            .reading-unit { font-size: 18px; }
+            .reading-label { font-size: 13px; margin-bottom: 4px; }
+            .reading { padding: 14px 0; border-radius: 10px; }
         }
 
         @media (max-width: 500px) {
-            .page { padding: 10px 10px 12px; gap: 8px; }
-            :root { --header-height: 52px; }
+            .page { padding: 8px 8px 10px; gap: 6px; }
+            :root { --header-height: 48px; }
             .header-title { font-size: 16px; }
-            .clock-time { font-size: 20px; }
-            .logo { width: 34px; height: 34px; }
+            .clock-time { font-size: 18px; }
+            .logo { width: 30px; height: 30px; }
             .header-meta { display: none; }
+            .room-name { font-size: 12px; }
+            .device-name { font-size: 16px; }
+            .reading-value { font-size: 34px; }
+            .reading-unit { font-size: 15px; }
         }
     </style>
 </head>
