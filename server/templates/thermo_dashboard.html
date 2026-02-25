@@ -42,7 +42,7 @@
             display: flex; flex-direction: column;
             padding: 16px 20px 20px;
             gap: 14px;
-            transition: transform 4s ease-in-out;
+            transition: transform 2s linear;
         }
 
         /* ── Header ── */
@@ -449,14 +449,29 @@
             else { enter.style.display="block"; exit.style.display="none"; }
         });
 
-        // Anti burn-in: pixel shifting every 30s, ±3px random offset
+        // ── Anti burn-in ──
         const page = document.querySelector(".page");
-        function pixelShift() {
-            const dx = Math.round((Math.random() - 0.5) * 6);
-            const dy = Math.round((Math.random() - 0.5) * 6);
-            page.style.transform = `translate(${dx}px, ${dy}px)`;
+        let driftX = 0, driftY = 0, driftVx = 0.4, driftVy = 0.3;
+        const DRIFT_MAX = 4;
+
+        function driftStep() {
+            driftX += driftVx;
+            driftY += driftVy;
+            if (driftX > DRIFT_MAX || driftX < -DRIFT_MAX) driftVx = -driftVx;
+            if (driftY > DRIFT_MAX || driftY < -DRIFT_MAX) driftVy = -driftVy;
+            page.style.transform = `translate(${driftX.toFixed(1)}px, ${driftY.toFixed(1)}px)`;
         }
-        setInterval(pixelShift, 30000);
+        setInterval(driftStep, 2000);
+
+        let hueShift = 0;
+        function colorCycle() {
+            hueShift = (hueShift + 1) % 360;
+            const tempHue = 25 + Math.sin(hueShift * Math.PI / 180) * 12;
+            const humiHue = 200 + Math.sin((hueShift + 120) * Math.PI / 180) * 15;
+            document.documentElement.style.setProperty("--temp-color", `hsl(${tempHue}, 93%, 53%)`);
+            document.documentElement.style.setProperty("--humi-color", `hsl(${humiHue}, 92%, 60%)`);
+        }
+        setInterval(colorCycle, 60000);
 
         refreshReadings();
         setInterval(refreshReadings, REFRESH_INTERVAL_MS);
