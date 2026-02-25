@@ -190,6 +190,32 @@
             font-size: 16px;
         }
 
+        .fullscreen-btn {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 8px 14px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-sub);
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            white-space: nowrap;
+        }
+
+        .fullscreen-btn:hover {
+            background: var(--bg);
+            color: var(--text-main);
+            border-color: var(--text-sub);
+        }
+
+        .fullscreen-btn svg {
+            width: 16px;
+            height: 16px;
+        }
+
         @media (max-width: 820px) {
             .page {
                 padding: 14px 12px 20px;
@@ -216,6 +242,11 @@
             <div class="summary">
                 <span><span class="dot"></span><span id="device-count">0 sensors</span></span>
                 <span id="updated-at">Last update: --</span>
+                <button class="fullscreen-btn" id="fullscreen-btn" onclick="toggleFullscreen()" title="Toggle fullscreen">
+                    <svg id="fs-icon-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                    <svg id="fs-icon-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+                    <span id="fs-text">Fullscreen</span>
+                </button>
             </div>
         </header>
 
@@ -229,6 +260,9 @@
         const countElement = document.getElementById("device-count");
         const updatedElement = document.getElementById("updated-at");
         const errorBox = document.getElementById("error-box");
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const mockMode = urlParams.get("mock") === "1";
 
         function showError(message) {
             errorBox.textContent = message;
@@ -301,7 +335,8 @@
 
         async function refreshReadings() {
             try {
-                const response = await fetch("/api/thermometers", { cache: "no-store" });
+                const apiUrl = mockMode ? "/api/thermometers?mock=1" : "/api/thermometers";
+                const response = await fetch(apiUrl, { cache: "no-store" });
                 const payload = await response.json();
 
                 if (!response.ok) {
@@ -318,6 +353,31 @@
                 showError(error.message || "Failed to load thermometer data.");
             }
         }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen().catch(() => {});
+            }
+        }
+
+        function updateFullscreenButton() {
+            const enterIcon = document.getElementById("fs-icon-enter");
+            const exitIcon = document.getElementById("fs-icon-exit");
+            const text = document.getElementById("fs-text");
+            if (document.fullscreenElement) {
+                enterIcon.style.display = "none";
+                exitIcon.style.display = "block";
+                text.textContent = "Exit";
+            } else {
+                enterIcon.style.display = "block";
+                exitIcon.style.display = "none";
+                text.textContent = "Fullscreen";
+            }
+        }
+
+        document.addEventListener("fullscreenchange", updateFullscreenButton);
 
         refreshReadings();
         setInterval(refreshReadings, REFRESH_INTERVAL_MS);

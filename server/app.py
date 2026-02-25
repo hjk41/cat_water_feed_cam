@@ -354,6 +354,23 @@ def thermometer_dashboard():
 
 @app.route("/api/thermometers")
 def thermometer_data():
+    if request.args.get("mock") == "1":
+        from datetime import datetime, timezone
+        import random
+        mock_items = [
+            {"did": "mock-1", "name": "温湿度计", "room": "客厅", "model": "lumi.sensor_ht.v2", "temperature": round(22.0 + random.uniform(-0.5, 0.5), 1), "humidity": round(55.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-2", "name": "温湿度计 Pro", "room": "卧室", "model": "miaomiaoce.sensor_ht.t2", "temperature": round(20.5 + random.uniform(-0.5, 0.5), 1), "humidity": round(50.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-3", "name": "青萍温湿度计", "room": "书房", "model": "cgllc.sensor_ht.qpg1", "temperature": round(23.8 + random.uniform(-0.5, 0.5), 1), "humidity": round(48.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-4", "name": "温湿度计 2", "room": "厨房", "model": "lumi.sensor_ht.v2", "temperature": round(25.2 + random.uniform(-0.5, 0.5), 1), "humidity": round(62.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-5", "name": "蓝牙温湿度计", "room": "阳台", "model": "miaomiaoce.sensor_ht.t1", "temperature": round(15.3 + random.uniform(-0.5, 0.5), 1), "humidity": round(70.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-6", "name": "温湿度计 S1", "room": "儿童房", "model": "lumi.weather.v1", "temperature": round(21.0 + random.uniform(-0.5, 0.5), 1), "humidity": round(52.0 + random.uniform(-2, 2), 1), "online": False},
+        ]
+        return jsonify({
+            "count": len(mock_items),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "items": mock_items,
+        })
+
     service = XiaomiThermoService.from_env()
     try:
         return jsonify(service.get_house_readings())
