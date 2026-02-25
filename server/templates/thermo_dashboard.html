@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>智能家庭管家</title>
+    <style>
+        :root {
+            --bg-from: #0f172a;
+            --bg-to: #1e293b;
+            --card-bg: rgba(255, 255, 255, 0.06);
+            --card-border: rgba(255, 255, 255, 0.10);
+            --card-hover: rgba(255, 255, 255, 0.10);
+            --text-primary: #f1f5f9;
+            --text-secondary: rgba(255, 255, 255, 0.55);
+            --temp-color: #f97316;
+            --humi-color: #38bdf8;
+            --accent: #818cf8;
+            --online-color: #34d399;
+            --offline-color: #f87171;
+            --pill-bg: rgba(255, 255, 255, 0.08);
+            --error-bg: rgba(239, 68, 68, 0.15);
+            --error-border: rgba(239, 68, 68, 0.3);
+            --error-text: #fca5a5;
+            --header-height: 72px;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body {
+            width: 100%; height: 100%; overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Noto Sans SC", "Segoe UI", Roboto, sans-serif;
+            background: linear-gradient(145deg, var(--bg-from), var(--bg-to));
+            color: var(--text-primary);
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .page {
+            width: 100%; height: 100vh;
+            display: flex; flex-direction: column;
+            padding: 16px 20px 20px;
+            gap: 14px;
+            transition: transform 2s linear;
+        }
+
+        /* ── Header ── */
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-shrink: 0;
+            padding: 0 4px;
+            height: var(--header-height);
+        }
+
+        .header-left { display: flex; align-items: center; gap: 16px; }
+
+        .logo {
+            width: 44px; height: 44px;
+            background: linear-gradient(135deg, var(--accent), #6366f1);
+            border-radius: 12px;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+        }
+
+        .logo svg { width: 24px; height: 24px; color: #fff; }
+
+        .header-title {
+            font-size: 22px; font-weight: 700;
+            letter-spacing: 1px;
+            background: linear-gradient(90deg, #e2e8f0, #94a3b8);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-right {
+            display: flex; align-items: center; gap: 18px;
+        }
+
+        .clock {
+            text-align: right;
+        }
+
+        .clock-time {
+            font-size: 28px; font-weight: 300;
+            font-variant-numeric: tabular-nums;
+            letter-spacing: 1px;
+            color: var(--text-primary);
+        }
+
+        .clock-date {
+            font-size: 13px; color: var(--text-secondary);
+            margin-top: 2px; letter-spacing: 0.5px;
+        }
+
+        .header-meta {
+            display: flex; align-items: center; gap: 14px;
+        }
+
+        .sensor-badge {
+            display: flex; align-items: center; gap: 6px;
+            background: var(--pill-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 5px 12px;
+            font-size: 12px; color: var(--text-secondary);
+        }
+
+        .sensor-badge .dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--online-color);
+            box-shadow: 0 0 6px var(--online-color);
+        }
+
+        .fullscreen-btn {
+            background: var(--pill-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 8px;
+            padding: 6px 10px;
+            cursor: pointer;
+            color: var(--text-secondary);
+            transition: all 0.2s;
+            display: flex; align-items: center;
+        }
+
+        .fullscreen-btn:hover {
+            background: rgba(255,255,255,0.12);
+            color: var(--text-primary);
+        }
+
+        .fullscreen-btn svg { width: 18px; height: 18px; }
+
+        /* ── Error ── */
+        .error {
+            display: none;
+            border-radius: 10px;
+            border: 1px solid var(--error-border);
+            background: var(--error-bg);
+            color: var(--error-text);
+            padding: 10px 16px;
+            font-size: 13px;
+            flex-shrink: 0;
+        }
+
+        .error.show { display: block; }
+
+        /* ── Grid ── */
+        .grid {
+            flex: 1; min-height: 0;
+            display: grid;
+            gap: 14px;
+            align-content: stretch;
+        }
+
+        /* ── Card ── */
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 16px;
+            padding: 18px 20px 12px;
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+            transition: background 0.25s, border-color 0.25s, transform 0.2s;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute; top: 0; left: 0; right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, var(--temp-color), var(--humi-color));
+            opacity: 0.6;
+            border-radius: 16px 16px 0 0;
+        }
+
+        .card:hover {
+            background: var(--card-hover);
+            border-color: rgba(255,255,255,0.18);
+            transform: translateY(-2px);
+        }
+
+        .card-top { display: flex; align-items: flex-start; justify-content: space-between; }
+
+        .card-top { align-self: start; }
+        .readings { align-self: stretch; }
+
+        .room-name {
+            font-size: 16px; color: var(--text-secondary);
+            letter-spacing: 1.5px;
+            font-weight: 500;
+        }
+
+        .device-name {
+            font-size: 24px; font-weight: 700;
+            margin-top: 4px;
+            color: var(--text-primary);
+            line-height: 1.2;
+        }
+
+        .status-dot {
+            width: 10px; height: 10px; border-radius: 50%;
+            margin-top: 6px; flex-shrink: 0;
+        }
+
+        .status-dot.online {
+            background: var(--online-color);
+            box-shadow: 0 0 10px rgba(52, 211, 153, 0.5);
+        }
+
+        .status-dot.offline {
+            background: var(--offline-color);
+            box-shadow: 0 0 10px rgba(248, 113, 113, 0.4);
+        }
+
+        .readings {
+            display: flex; gap: 14px;
+            min-height: 0;
+        }
+
+        .reading {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.18);
+            border-radius: 14px;
+            padding: 12px 8px;
+            display: flex; flex-direction: column;
+            align-items: center; justify-content: center;
+        }
+
+        .reading-label {
+            font-size: 15px; color: var(--text-secondary);
+            letter-spacing: 1px;
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .reading-value {
+            font-size: 52px; font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            line-height: 1;
+        }
+
+        .reading-unit {
+            font-size: 22px; font-weight: 400;
+            opacity: 0.7;
+        }
+
+        .reading-value.temp { color: var(--temp-color); }
+        .reading-value.humi { color: var(--humi-color); }
+
+        .card-footer {
+            align-self: end;
+            font-size: 13px; color: var(--text-secondary);
+            opacity: 0.5;
+        }
+
+        .empty-state {
+            display: flex; align-items: center; justify-content: center;
+            flex: 1;
+            color: var(--text-secondary);
+            font-size: 15px;
+            border: 1px dashed rgba(255,255,255,0.12);
+            border-radius: 16px;
+        }
+
+        /* ── Responsive for iPad mini 4 (1024×768) ── */
+        @media (max-width: 1024px) {
+            .page { padding: 10px 12px 12px; gap: 8px; }
+            :root { --header-height: 52px; }
+            .header-title { font-size: 18px; }
+            .clock-time { font-size: 22px; }
+            .clock-date { font-size: 11px; }
+            .logo { width: 34px; height: 34px; border-radius: 10px; }
+            .logo svg { width: 18px; height: 18px; }
+            .grid { gap: 8px; }
+            .card { padding: 12px 14px 8px; border-radius: 12px; }
+            .room-name { font-size: 13px; }
+            .device-name { font-size: 19px; }
+            .reading-value { font-size: 42px; }
+            .reading-unit { font-size: 18px; }
+            .reading-label { font-size: 13px; margin-bottom: 4px; }
+            .reading { padding: 14px 0; border-radius: 10px; }
+        }
+
+        @media (max-width: 500px) {
+            .page { padding: 8px 8px 10px; gap: 6px; }
+            :root { --header-height: 48px; }
+            .header-title { font-size: 16px; }
+            .clock-time { font-size: 18px; }
+            .logo { width: 30px; height: 30px; }
+            .header-meta { display: none; }
+            .room-name { font-size: 12px; }
+            .device-name { font-size: 16px; }
+            .reading-value { font-size: 34px; }
+            .reading-unit { font-size: 15px; }
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <header class="header">
+            <div class="header-left">
+                <div class="logo">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                        <polyline points="9 22 9 12 15 12 15 22"/>
+                    </svg>
+                </div>
+                <span class="header-title">智能家庭管家</span>
+            </div>
+            <div class="header-right">
+                <div class="header-meta">
+                    <div class="sensor-badge">
+                        <span class="dot"></span>
+                        <span id="device-count">0 个传感器</span>
+                    </div>
+                    <button class="fullscreen-btn" onclick="toggleFullscreen()" title="全屏显示">
+                        <svg id="fs-icon-enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                        <svg id="fs-icon-exit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"/></svg>
+                    </button>
+                </div>
+                <div class="clock">
+                    <div class="clock-time" id="clock-time">--:--:--</div>
+                    <div class="clock-date" id="clock-date">----年--月--日</div>
+                </div>
+            </div>
+        </header>
+
+        <section id="error-box" class="error"></section>
+        <section id="cards" class="grid"></section>
+    </main>
+
+    <script>
+        const REFRESH_INTERVAL_MS = 10000;
+        const cardsEl = document.getElementById("cards");
+        const countEl = document.getElementById("device-count");
+        const errorBox = document.getElementById("error-box");
+        const clockTimeEl = document.getElementById("clock-time");
+        const clockDateEl = document.getElementById("clock-date");
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const mockMode = urlParams.get("mock") === "1";
+
+        const WEEKDAYS = ["星期日","星期一","星期二","星期三","星期四","星期五","星期六"];
+
+        function tickClock() {
+            const now = new Date();
+            const h = String(now.getHours()).padStart(2, "0");
+            const m = String(now.getMinutes()).padStart(2, "0");
+            const s = String(now.getSeconds()).padStart(2, "0");
+            clockTimeEl.textContent = `${h}:${m}:${s}`;
+            const y = now.getFullYear();
+            const mo = now.getMonth() + 1;
+            const d = now.getDate();
+            const wd = WEEKDAYS[now.getDay()];
+            clockDateEl.textContent = `${y}年${mo}月${d}日 ${wd}`;
+        }
+
+        tickClock();
+        setInterval(tickClock, 1000);
+
+        function showError(msg) { errorBox.textContent = msg; errorBox.classList.add("show"); }
+        function clearError() { errorBox.textContent = ""; errorBox.classList.remove("show"); }
+
+        function computeGridLayout(count) {
+            if (count <= 0) return;
+            if (count <= 2) { cardsEl.style.gridTemplateColumns = `repeat(${count}, 1fr)`; cardsEl.style.gridTemplateRows = "1fr"; return; }
+            if (count <= 3) { cardsEl.style.gridTemplateColumns = `repeat(3, 1fr)`; cardsEl.style.gridTemplateRows = "1fr"; return; }
+            if (count <= 4) { cardsEl.style.gridTemplateColumns = "repeat(2, 1fr)"; cardsEl.style.gridTemplateRows = "repeat(2, 1fr)"; return; }
+            if (count <= 6) { cardsEl.style.gridTemplateColumns = "repeat(3, 1fr)"; cardsEl.style.gridTemplateRows = "repeat(2, 1fr)"; return; }
+            if (count <= 9) { cardsEl.style.gridTemplateColumns = "repeat(3, 1fr)"; cardsEl.style.gridTemplateRows = `repeat(${Math.ceil(count/3)}, 1fr)`; return; }
+            const cols = Math.ceil(Math.sqrt(count));
+            const rows = Math.ceil(count / cols);
+            cardsEl.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+            cardsEl.style.gridTemplateRows = `repeat(${rows}, 1fr)`;
+        }
+
+        function renderCards(items) {
+            if (!Array.isArray(items) || items.length === 0) {
+                cardsEl.innerHTML = `<div class="empty-state">暂无传感器数据</div>`;
+                return;
+            }
+
+            computeGridLayout(items.length);
+
+            cardsEl.innerHTML = items.map(item => {
+                const room = item.room || "未分配";
+                const name = item.name || item.model || "未命名";
+                const model = item.model || "-";
+                const isOnline = item.online !== false;
+                const statusClass = isOnline ? "online" : "offline";
+                const t = typeof item.temperature === "number" ? item.temperature.toFixed(1) : "--";
+                const h = typeof item.humidity === "number" ? item.humidity.toFixed(1) : "--";
+
+                return `
+                <article class="card">
+                    <div class="card-top">
+                        <div>
+                            <div class="room-name">${room}</div>
+                            <div class="device-name">${name}</div>
+                        </div>
+                        <div class="status-dot ${statusClass}" title="${isOnline ? '在线' : '离线'}"></div>
+                    </div>
+                    <div class="readings">
+                        <div class="reading">
+                            <div class="reading-label">温度</div>
+                            <div class="reading-value temp">${t}<span class="reading-unit">°C</span></div>
+                        </div>
+                        <div class="reading">
+                            <div class="reading-label">湿度</div>
+                            <div class="reading-value humi">${h}<span class="reading-unit">%</span></div>
+                        </div>
+                    </div>
+                    <div class="card-footer">
+                        <span>${model}</span>
+                    </div>
+                </article>`;
+            }).join("");
+        }
+
+        async function refreshReadings() {
+            try {
+                const apiUrl = mockMode ? "/api/thermometers?mock=1" : "/api/thermometers";
+                const resp = await fetch(apiUrl, { cache: "no-store" });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || "加载失败");
+                clearError();
+                renderCards(data.items || []);
+                const n = typeof data.count === "number" ? data.count : (data.items || []).length;
+                countEl.textContent = `${n} 个传感器`;
+            } catch (e) {
+                showError(e.message || "数据加载失败");
+            }
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen().catch(() => {});
+            }
+        }
+
+        document.addEventListener("fullscreenchange", () => {
+            const enter = document.getElementById("fs-icon-enter");
+            const exit = document.getElementById("fs-icon-exit");
+            if (document.fullscreenElement) { enter.style.display="none"; exit.style.display="block"; }
+            else { enter.style.display="block"; exit.style.display="none"; }
+        });
+
+        // ── Anti burn-in ──
+        const page = document.querySelector(".page");
+        let driftX = 0, driftY = 0, driftVx = 0.4, driftVy = 0.3;
+        const DRIFT_MAX = 4;
+
+        function driftStep() {
+            driftX += driftVx;
+            driftY += driftVy;
+            if (driftX > DRIFT_MAX || driftX < -DRIFT_MAX) driftVx = -driftVx;
+            if (driftY > DRIFT_MAX || driftY < -DRIFT_MAX) driftVy = -driftVy;
+            page.style.transform = `translate(${driftX.toFixed(1)}px, ${driftY.toFixed(1)}px)`;
+        }
+        setInterval(driftStep, 2000);
+
+        let hueShift = 0;
+        function colorCycle() {
+            hueShift = (hueShift + 1) % 360;
+            const tempHue = 25 + Math.sin(hueShift * Math.PI / 180) * 12;
+            const humiHue = 200 + Math.sin((hueShift + 120) * Math.PI / 180) * 15;
+            document.documentElement.style.setProperty("--temp-color", `hsl(${tempHue}, 93%, 53%)`);
+            document.documentElement.style.setProperty("--humi-color", `hsl(${humiHue}, 92%, 60%)`);
+        }
+        setInterval(colorCycle, 60000);
+
+        refreshReadings();
+        setInterval(refreshReadings, REFRESH_INTERVAL_MS);
+    </script>
+</body>
+</html>

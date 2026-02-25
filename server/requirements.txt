@@ -11,3 +11,4 @@ six
 pyyaml
 packaging
 faiss-cpu
+python-miio==0.5.12

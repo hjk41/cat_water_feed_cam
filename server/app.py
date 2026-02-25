@@ -1,13 +1,14 @@
 import os
 import base64
 from pathlib import Path
-from flask import Flask, request, jsonify, render_template_string, url_for
+from flask import Flask, request, jsonify, render_template, render_template_string, url_for
 import requests
 import database as db
 from dotenv import load_dotenv
 from detection import paddle_has_cat_from_b64 as paddle_has_cat
 import cv2
 import numpy as np
+from xiaomi_thermo import XiaomiThermoService
 
 load_dotenv()  # Load environment variables from .env file
 
@@ -344,6 +345,60 @@ def log():
     </html>
     """
     return render_template_string(html, rows=rows)
+
+
+@app.route("/thermometers")
+def thermometer_dashboard():
+    return render_template("thermo_dashboard.html")
+
+
+@app.route("/api/thermometers")
+def thermometer_data():
+    if request.args.get("mock") == "1":
+        from datetime import datetime, timezone
+        import random
+        mock_items = [
+            {"did": "mock-1", "name": "温湿度计", "room": "客厅", "model": "lumi.sensor_ht.v2", "temperature": round(22.0 + random.uniform(-0.5, 0.5), 1), "humidity": round(55.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-2", "name": "温湿度计 Pro", "room": "卧室", "model": "miaomiaoce.sensor_ht.t2", "temperature": round(20.5 + random.uniform(-0.5, 0.5), 1), "humidity": round(50.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-3", "name": "青萍温湿度计", "room": "书房", "model": "cgllc.sensor_ht.qpg1", "temperature": round(23.8 + random.uniform(-0.5, 0.5), 1), "humidity": round(48.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-4", "name": "温湿度计 2", "room": "厨房", "model": "lumi.sensor_ht.v2", "temperature": round(25.2 + random.uniform(-0.5, 0.5), 1), "humidity": round(62.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-5", "name": "蓝牙温湿度计", "room": "阳台", "model": "miaomiaoce.sensor_ht.t1", "temperature": round(15.3 + random.uniform(-0.5, 0.5), 1), "humidity": round(70.0 + random.uniform(-2, 2), 1), "online": True},
+            {"did": "mock-6", "name": "温湿度计 S1", "room": "儿童房", "model": "lumi.weather.v1", "temperature": round(21.0 + random.uniform(-0.5, 0.5), 1), "humidity": round(52.0 + random.uniform(-2, 2), 1), "online": False},
+        ]
+        return jsonify({
+            "count": len(mock_items),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "items": mock_items,
+        })
+
+    service = XiaomiThermoService.from_env()
+    try:
+        return jsonify(service.get_house_readings())
+    except ValueError as exc:
+        return (
+            jsonify(
+                {
+                    "count": 0,
+                    "updated_at": None,
+                    "items": [],
+                    "error": str(exc),
+                }
+            ),
+            400,
+        )
+    except Exception as exc:
+        print(f"Failed to load thermometer data from Xiaomi cloud: {exc}")
+        return (
+            jsonify(
+                {
+                    "count": 0,
+                    "updated_at": None,
+                    "items": [],
+                    "error": "Failed to load data from Xiaomi cloud.",
+                }
+            ),
+            502,
+        )
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8099, debug=False)
