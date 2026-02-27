@@ -408,7 +408,7 @@ def thermometer_data():
 
 import threading
 
-_qr_state = {"status": "idle", "qr_url": "", "lp_url": "", "error": ""}
+_qr_state = {"status": "idle", "qr_url": "", "login_url": "", "error": "", "session": None, "qr_img": ""}
 
 
 @app.route("/api/thermometers/qr-login", methods=["POST"])
@@ -428,8 +428,8 @@ def qr_login_start():
         )
         data = json.loads(r.text.replace("&&&START&&&", ""))
         qr_url = data.get("qr", "")
-        lp_url = data.get("lp", "")
-        if not qr_url or not lp_url:
+        login_url = data.get("loginUrl", "")
+        if not qr_url or not login_url:
             return jsonify({"error": "无法获取二维码"}), 500
 
         import qrcode, io, base64 as b64mod
@@ -444,12 +444,9 @@ def qr_login_start():
         _qr_state["status"] = "polling"
         _qr_state["qr_url"] = qr_url
         _qr_state["qr_img"] = qr_img_b64
-        _qr_state["lp_url"] = lp_url
+        _qr_state["login_url"] = login_url
+        _qr_state["session"] = sess
         _qr_state["error"] = ""
-
-        country = os.getenv("MIIO_COUNTRY", "cn")
-        t = threading.Thread(target=_qr_poll_worker, args=(sess, lp_url, country), daemon=True)
-        t.start()
 
         return jsonify({"qr_img": qr_img_b64, "status": "polling"})
     except Exception as e:
@@ -458,54 +455,7 @@ def qr_login_start():
         return jsonify({"error": str(e)}), 500
 
 
-def _qr_poll_worker(sess, lp_url: str, country: str):
-    """Background thread: long-poll until QR scanned, then save tokens."""
-    import json as _json
-
-    for attempt in range(5):
-        try:
-            r = sess.get(lp_url, timeout=60)
-            body = r.text.strip()
-            if not body:
-                continue
-            if body.startswith("&&&START&&&"):
-                body = body[len("&&&START&&&"):]
-            data = _json.loads(body)
-
-            location = data.get("location", "")
-            if not location:
-                code = data.get("code", -1)
-                if code == 3:
-                    _qr_state["status"] = "expired"
-                    _qr_state["error"] = "二维码已过期，请重新获取"
-                    return
-                continue
-
-            r2 = sess.get(location, timeout=15, allow_redirects=True)
-            service_token = sess.cookies.get("serviceToken")
-            user_id = sess.cookies.get("userId")
-
-            if service_token and user_id:
-                _save_token_to_env(service_token, user_id, country)
-                _qr_state["status"] = "success"
-                _qr_state["error"] = ""
-                return
-            else:
-                _qr_state["status"] = "error"
-                _qr_state["error"] = "扫码成功但未获取到 token"
-                return
-
-        except _json.JSONDecodeError:
-            continue
-        except requests.exceptions.Timeout:
-            continue
-        except Exception as e:
-            _qr_state["status"] = "error"
-            _qr_state["error"] = str(e)
-            return
-
-    _qr_state["status"] = "expired"
-    _qr_state["error"] = "等待超时，请重新获取二维码"
+pass  # poll worker removed, using qr-status check instead
 
 
 def _save_token_to_env(service_token: str, user_id: str, country: str):
@@ -540,7 +490,38 @@ def _save_token_to_env(service_token: str, user_id: str, country: str):
 
 @app.route("/api/thermometers/qr-status")
 def qr_login_status():
-    return jsonify({"status": _qr_state["status"], "error": _qr_state["error"]})
+    if _qr_state["status"] != "polling":
+        return jsonify({"status": _qr_state["status"], "error": _qr_state["error"]})
+
+    sess = _qr_state.get("session")
+    login_url = _qr_state.get("login_url", "")
+    if not sess or not login_url:
+        return jsonify({"status": "polling", "error": ""})
+
+    try:
+        r = sess.get(login_url, timeout=8, allow_redirects=False)
+
+        if r.status_code in (301, 302, 303, 307):
+            location = r.headers.get("Location", "")
+            if "serviceLogin" in location:
+                return jsonify({"status": "polling", "error": ""})
+
+            if location and "serviceLogin" not in location:
+                r2 = sess.get(location, timeout=10, allow_redirects=True)
+                service_token = sess.cookies.get("serviceToken")
+                user_id = sess.cookies.get("userId")
+                if service_token and user_id:
+                    country = os.getenv("MIIO_COUNTRY", "cn")
+                    _save_token_to_env(service_token, user_id, country)
+                    _qr_state["status"] = "success"
+                    _qr_state["error"] = ""
+                    _qr_state["session"] = None
+                    return jsonify({"status": "success", "error": ""})
+
+        return jsonify({"status": "polling", "error": ""})
+
+    except Exception:
+        return jsonify({"status": "polling", "error": ""})
 
 
 if __name__ == "__main__":
