@@ -416,8 +416,7 @@ def qr_login_start():
     """Start QR login: get ticket, return QR URL, poll in background."""
     import requests as _req
 
-    if _qr_state["status"] == "polling":
-        return jsonify({"qr_img": _qr_state.get("qr_img", ""), "status": "polling"})
+    pass  # always generate fresh ticket on each request
 
     try:
         sess = _req.Session()
@@ -441,12 +440,14 @@ def qr_login_start():
         img.save(buf, format="PNG")
         qr_img_b64 = "data:image/png;base64," + b64mod.b64encode(buf.getvalue()).decode()
 
-        _qr_state["status"] = "polling"
-        _qr_state["qr_url"] = qr_url
-        _qr_state["qr_img"] = qr_img_b64
-        _qr_state["login_url"] = login_url
-        _qr_state["session"] = sess
-        _qr_state["error"] = ""
+        _qr_state.update({
+            "status": "polling",
+            "qr_url": qr_url,
+            "qr_img": qr_img_b64,
+            "login_url": login_url,
+            "session": sess,
+            "error": "",
+        })
 
         return jsonify({"qr_img": qr_img_b64, "status": "polling"})
     except Exception as e:
@@ -490,38 +491,48 @@ def _save_token_to_env(service_token: str, user_id: str, country: str):
 
 @app.route("/api/thermometers/qr-status")
 def qr_login_status():
-    if _qr_state["status"] != "polling":
-        return jsonify({"status": _qr_state["status"], "error": _qr_state["error"]})
+    status = _qr_state["status"]
+    if status != "polling":
+        return jsonify({"status": status, "error": _qr_state["error"]})
 
     sess = _qr_state.get("session")
     login_url = _qr_state.get("login_url", "")
     if not sess or not login_url:
         return jsonify({"status": "polling", "error": ""})
 
-    try:
-        r = sess.get(login_url, timeout=8, allow_redirects=False)
-
-        if r.status_code in (301, 302, 303, 307):
+    def _check():
+        try:
+            r = sess.get(login_url, timeout=8, allow_redirects=False)
+            if r.status_code not in (301, 302, 303, 307):
+                return
             location = r.headers.get("Location", "")
             if "serviceLogin" in location:
-                return jsonify({"status": "polling", "error": ""})
+                return
+            if not location:
+                return
+            r2 = sess.get(location, timeout=10, allow_redirects=True)
+            st = sess.cookies.get("serviceToken")
+            uid = sess.cookies.get("userId")
+            if st and uid:
+                country = os.getenv("MIIO_COUNTRY", "cn")
+                _save_token_to_env(st, uid, country)
+                _qr_state["status"] = "success"
+                _qr_state["error"] = ""
+                _qr_state["session"] = None
+        except Exception:
+            pass
 
-            if location and "serviceLogin" not in location:
-                r2 = sess.get(location, timeout=10, allow_redirects=True)
-                service_token = sess.cookies.get("serviceToken")
-                user_id = sess.cookies.get("userId")
-                if service_token and user_id:
-                    country = os.getenv("MIIO_COUNTRY", "cn")
-                    _save_token_to_env(service_token, user_id, country)
-                    _qr_state["status"] = "success"
-                    _qr_state["error"] = ""
-                    _qr_state["session"] = None
-                    return jsonify({"status": "success", "error": ""})
+    if not _qr_state.get("_checking"):
+        _qr_state["_checking"] = True
+        def _run():
+            try:
+                _check()
+            finally:
+                _qr_state["_checking"] = False
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
 
-        return jsonify({"status": "polling", "error": ""})
-
-    except Exception:
-        return jsonify({"status": "polling", "error": ""})
+    return jsonify({"status": _qr_state["status"], "error": _qr_state["error"]})
 
 
 if __name__ == "__main__":

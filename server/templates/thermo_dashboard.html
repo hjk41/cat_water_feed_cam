@@ -441,7 +441,7 @@
         let qrLoginActive = false;
 
         function showQrLogin() {
-            if (qrLoginActive) return;
+            if (qrLoginActive && qrPolling) return;
             qrLoginActive = true;
             qrOverlay.classList.add("show");
             cardsEl.style.display = "none";
