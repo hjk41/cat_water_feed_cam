@@ -1,3 +1,4 @@
+import json
 import os
 import base64
 from pathlib import Path
@@ -382,23 +383,165 @@ def thermometer_data():
                     "updated_at": None,
                     "items": [],
                     "error": str(exc),
+                    "need_login": True,
                 }
             ),
             400,
         )
     except Exception as exc:
-        print(f"Failed to load thermometer data from Xiaomi cloud: {exc}")
+        err_msg = str(exc)
+        print(f"Failed to load thermometer data from Xiaomi cloud: {err_msg}")
+        need_login = "Login failed" in err_msg or "token" in err_msg.lower() or "过期" in err_msg
         return (
             jsonify(
                 {
                     "count": 0,
                     "updated_at": None,
                     "items": [],
-                    "error": "Failed to load data from Xiaomi cloud.",
+                    "error": err_msg if need_login else "Failed to load data from Xiaomi cloud.",
+                    "need_login": need_login,
                 }
             ),
             502,
         )
+
+
+import threading
+
+_qr_state = {"status": "idle", "qr_url": "", "lp_url": "", "error": ""}
+
+
+@app.route("/api/thermometers/qr-login", methods=["POST"])
+def qr_login_start():
+    """Start QR login: get ticket, return QR URL, poll in background."""
+    import requests as _req
+
+    if _qr_state["status"] == "polling":
+        return jsonify({"qr_img": _qr_state.get("qr_img", ""), "status": "polling"})
+
+    try:
+        sess = _req.Session()
+        r = sess.get(
+            "https://account.xiaomi.com/longPolling/loginUrl",
+            params={"sid": "xiaomiio", "_qrsize": "240"},
+            timeout=10,
+        )
+        data = json.loads(r.text.replace("&&&START&&&", ""))
+        qr_url = data.get("qr", "")
+        lp_url = data.get("lp", "")
+        if not qr_url or not lp_url:
+            return jsonify({"error": "无法获取二维码"}), 500
+
+        import qrcode, io, base64 as b64mod
+        qr = qrcode.QRCode(version=1, box_size=8, border=2)
+        qr.add_data(qr_url)
+        qr.make(fit=True)
+        img = qr.make_image(fill_color="#1e293b", back_color="#ffffff")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        qr_img_b64 = "data:image/png;base64," + b64mod.b64encode(buf.getvalue()).decode()
+
+        _qr_state["status"] = "polling"
+        _qr_state["qr_url"] = qr_url
+        _qr_state["qr_img"] = qr_img_b64
+        _qr_state["lp_url"] = lp_url
+        _qr_state["error"] = ""
+
+        country = os.getenv("MIIO_COUNTRY", "cn")
+        t = threading.Thread(target=_qr_poll_worker, args=(sess, lp_url, country), daemon=True)
+        t.start()
+
+        return jsonify({"qr_img": qr_img_b64, "status": "polling"})
+    except Exception as e:
+        _qr_state["status"] = "error"
+        _qr_state["error"] = str(e)
+        return jsonify({"error": str(e)}), 500
+
+
+def _qr_poll_worker(sess, lp_url: str, country: str):
+    """Background thread: long-poll until QR scanned, then save tokens."""
+    import json as _json
+
+    for attempt in range(5):
+        try:
+            r = sess.get(lp_url, timeout=60)
+            body = r.text.strip()
+            if not body:
+                continue
+            if body.startswith("&&&START&&&"):
+                body = body[len("&&&START&&&"):]
+            data = _json.loads(body)
+
+            location = data.get("location", "")
+            if not location:
+                code = data.get("code", -1)
+                if code == 3:
+                    _qr_state["status"] = "expired"
+                    _qr_state["error"] = "二维码已过期，请重新获取"
+                    return
+                continue
+
+            r2 = sess.get(location, timeout=15, allow_redirects=True)
+            service_token = sess.cookies.get("serviceToken")
+            user_id = sess.cookies.get("userId")
+
+            if service_token and user_id:
+                _save_token_to_env(service_token, user_id, country)
+                _qr_state["status"] = "success"
+                _qr_state["error"] = ""
+                return
+            else:
+                _qr_state["status"] = "error"
+                _qr_state["error"] = "扫码成功但未获取到 token"
+                return
+
+        except _json.JSONDecodeError:
+            continue
+        except requests.exceptions.Timeout:
+            continue
+        except Exception as e:
+            _qr_state["status"] = "error"
+            _qr_state["error"] = str(e)
+            return
+
+    _qr_state["status"] = "expired"
+    _qr_state["error"] = "等待超时，请重新获取二维码"
+
+
+def _save_token_to_env(service_token: str, user_id: str, country: str):
+    """Save tokens to .env so they survive restarts."""
+    from pathlib import Path
+
+    env_path = Path(__file__).parent / ".env"
+    lines = env_path.read_text().splitlines() if env_path.exists() else []
+
+    updates = {
+        "MIIO_SERVICE_TOKEN": service_token,
+        "MIIO_USER_ID": user_id,
+        "MIIO_COUNTRY": country,
+    }
+
+    for key, value in updates.items():
+        found = False
+        for i, line in enumerate(lines):
+            if line.startswith(f"{key}="):
+                lines[i] = f"{key}={value}"
+                found = True
+                break
+        if not found:
+            lines.append(f"{key}={value}")
+
+    env_path.write_text("\n".join(lines) + "\n")
+
+    os.environ["MIIO_SERVICE_TOKEN"] = service_token
+    os.environ["MIIO_USER_ID"] = user_id
+    os.environ["MIIO_COUNTRY"] = country
+
+
+@app.route("/api/thermometers/qr-status")
+def qr_login_status():
+    return jsonify({"status": _qr_state["status"], "error": _qr_state["error"]})
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=8099, debug=False)

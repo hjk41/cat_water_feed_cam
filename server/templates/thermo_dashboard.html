@@ -144,6 +144,67 @@
 
         .error.show { display: block; }
 
+        /* ── QR Login ── */
+        .qr-overlay {
+            display: none;
+            flex: 1;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .qr-overlay.show {
+            display: flex;
+        }
+
+        .qr-box {
+            background: rgba(255,255,255,0.06);
+            border: 1px solid var(--card-border);
+            border-radius: 20px;
+            padding: 36px 44px;
+            text-align: center;
+            backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+        }
+
+        .qr-box h2 {
+            font-size: 22px; font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-primary);
+        }
+
+        .qr-box p {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+
+        .qr-box img {
+            border-radius: 12px;
+            background: #fff;
+            padding: 12px;
+        }
+
+        .qr-status {
+            margin-top: 16px;
+            font-size: 13px;
+            color: var(--accent);
+        }
+
+        .qr-status.error { color: var(--offline-color); }
+
+        .qr-retry-btn {
+            margin-top: 12px;
+            background: var(--accent);
+            border: none;
+            color: #fff;
+            padding: 8px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+
+        .qr-retry-btn:hover { opacity: 0.85; }
+
         /* ── Grid ── */
         .grid {
             flex: 1; min-height: 0;
@@ -328,6 +389,15 @@
         </header>
 
         <section id="error-box" class="error"></section>
+        <section id="qr-overlay" class="qr-overlay">
+            <div class="qr-box">
+                <h2>扫码登录小米账号</h2>
+                <p>打开米家 App → 我的 → 右上角扫一扫</p>
+                <img id="qr-img" width="220" height="220" alt="QR" style="display:none" />
+                <div class="qr-status" id="qr-status">正在获取二维码...</div>
+                <button class="qr-retry-btn" id="qr-retry" style="display:none" onclick="startQrLogin()">重新获取</button>
+            </div>
+        </section>
         <section id="cards" class="grid"></section>
     </main>
 
@@ -338,9 +408,14 @@
         const errorBox = document.getElementById("error-box");
         const clockTimeEl = document.getElementById("clock-time");
         const clockDateEl = document.getElementById("clock-date");
+        const qrOverlay = document.getElementById("qr-overlay");
+        const qrImg = document.getElementById("qr-img");
+        const qrStatusEl = document.getElementById("qr-status");
+        const qrRetryBtn = document.getElementById("qr-retry");
 
         const urlParams = new URLSearchParams(window.location.search);
         const mockMode = urlParams.get("mock") === "1";
+        let qrPolling = false;
 
         const WEEKDAYS = ["星期日","星期一","星期二","星期三","星期四","星期五","星期六"];
 
@@ -362,6 +437,72 @@
 
         function showError(msg) { errorBox.textContent = msg; errorBox.classList.add("show"); }
         function clearError() { errorBox.textContent = ""; errorBox.classList.remove("show"); }
+
+        function showQrLogin() {
+            qrOverlay.classList.add("show");
+            cardsEl.style.display = "none";
+            startQrLogin();
+        }
+
+        function hideQrLogin() {
+            qrOverlay.classList.remove("show");
+            cardsEl.style.display = "";
+            qrPolling = false;
+        }
+
+        async function startQrLogin() {
+            qrStatusEl.textContent = "正在获取二维码...";
+            qrStatusEl.className = "qr-status";
+            qrRetryBtn.style.display = "none";
+            qrImg.style.display = "none";
+
+            try {
+                const r = await fetch("/api/thermometers/qr-login", { method: "POST" });
+                const data = await r.json();
+                if (data.error) {
+                    qrStatusEl.textContent = data.error;
+                    qrStatusEl.className = "qr-status error";
+                    qrRetryBtn.style.display = "";
+                    return;
+                }
+
+                qrImg.src = data.qr_img;
+                qrImg.style.display = "";
+                qrStatusEl.textContent = "等待扫码...";
+                qrPolling = true;
+                pollQrStatus();
+            } catch (e) {
+                qrStatusEl.textContent = "获取二维码失败: " + e.message;
+                qrStatusEl.className = "qr-status error";
+                qrRetryBtn.style.display = "";
+            }
+        }
+
+        async function pollQrStatus() {
+            if (!qrPolling) return;
+            try {
+                const r = await fetch("/api/thermometers/qr-status");
+                const data = await r.json();
+
+                if (data.status === "success") {
+                    qrStatusEl.textContent = "✓ 登录成功！正在加载数据...";
+                    qrStatusEl.className = "qr-status";
+                    qrPolling = false;
+                    setTimeout(() => { hideQrLogin(); refreshReadings(); }, 1500);
+                    return;
+                } else if (data.status === "expired" || data.status === "error") {
+                    qrStatusEl.textContent = data.error || "二维码已过期";
+                    qrStatusEl.className = "qr-status error";
+                    qrRetryBtn.style.display = "";
+                    qrPolling = false;
+                    return;
+                }
+
+                setTimeout(pollQrStatus, 2000);
+            } catch (e) {
+                setTimeout(pollQrStatus, 3000);
+            }
+        }
 
         function computeGridLayout(count) {
             if (count <= 0) return;
@@ -424,7 +565,16 @@
                 const apiUrl = mockMode ? "/api/thermometers?mock=1" : "/api/thermometers";
                 const resp = await fetch(apiUrl, { cache: "no-store" });
                 const data = await resp.json();
-                if (!resp.ok) throw new Error(data.error || "加载失败");
+
+                if (!resp.ok) {
+                    if (data.need_login) {
+                        showQrLogin();
+                        return;
+                    }
+                    throw new Error(data.error || "加载失败");
+                }
+
+                hideQrLogin();
                 clearError();
                 renderCards(data.items || []);
                 const n = typeof data.count === "number" ? data.count : (data.items || []).length;
