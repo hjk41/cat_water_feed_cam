@@ -114,22 +114,6 @@ def _first_non_empty(*values: Any) -> Optional[str]:
 
 
 class XiaomiThermoService:
-    def __init__(
-        self,
-        username: str,
-        password: str,
-        country: str = DEFAULT_COUNTRY,
-        model_hints: Optional[Iterable[str]] = None,
-    ):
-        self.username = username.strip()
-        self.password = password.strip()
-        self.country = (country or DEFAULT_COUNTRY).strip().lower() or DEFAULT_COUNTRY
-
-        hints = {item.lower() for item in THERMOMETER_MODEL_HINTS}
-        if model_hints:
-            hints.update(item.strip().lower() for item in model_hints if item.strip())
-        self.model_hints = tuple(sorted(hints))
-
     @classmethod
     def from_env(cls) -> "XiaomiThermoService":
         raw_hints = os.getenv("MIIO_SENSOR_MODELS", "")
@@ -139,11 +123,45 @@ class XiaomiThermoService:
             password=os.getenv("MIIO_PASSWORD", ""),
             country=os.getenv("MIIO_COUNTRY", DEFAULT_COUNTRY),
             model_hints=hint_list,
+            service_token=os.getenv("MIIO_SERVICE_TOKEN", ""),
+            user_id=os.getenv("MIIO_USER_ID", ""),
+            ssecurity=os.getenv("MIIO_SSECURITY", ""),
         )
 
+    def __init__(
+        self,
+        username: str,
+        password: str,
+        country: str = DEFAULT_COUNTRY,
+        model_hints: Optional[Iterable[str]] = None,
+        service_token: str = "",
+        user_id: str = "",
+        ssecurity: str = "",
+    ):
+        self.username = username.strip()
+        self.password = password.strip()
+        self.country = (country or DEFAULT_COUNTRY).strip().lower() or DEFAULT_COUNTRY
+        self.service_token = service_token.strip()
+        self.user_id = user_id.strip()
+        self.ssecurity = ssecurity.strip()
+
+        hints = {item.lower() for item in THERMOMETER_MODEL_HINTS}
+        if model_hints:
+            hints.update(item.strip().lower() for item in model_hints if item.strip())
+        self.model_hints = tuple(sorted(hints))
+
+    def _has_token(self) -> bool:
+        return bool(self.service_token and self.user_id)
+
     def get_house_readings(self) -> Dict[str, Any]:
+        if self._has_token():
+            return self._get_readings_with_token()
+
         if not self.username or not self.password:
-            raise ValueError("MIIO_USERNAME and MIIO_PASSWORD are required.")
+            raise ValueError(
+                "需要登录凭据。请设置 MIIO_USERNAME/MIIO_PASSWORD，"
+                "或运行 python qr_login.py 扫码登录获取 token。"
+            )
 
         cloud_interface = CloudInterface(username=self.username, password=self.password)
 
@@ -159,6 +177,79 @@ class XiaomiThermoService:
         device_list = list(devices.values())
         room_lookup = self._build_room_lookup(micloud_client)
 
+        readings = self._collect_readings(device_list, room_lookup, micloud_client)
+
+        readings.sort(key=lambda item: (item.room.lower(), item.name.lower()))
+
+        return {
+            "count": len(readings),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "items": [item.to_dict() for item in readings],
+        }
+
+    def _get_readings_with_token(self) -> Dict[str, Any]:
+        """Use pre-obtained service token (from qr_login.py) instead of password login."""
+        import requests as _requests
+        from micloud.micloud import MiCloud
+        from micloud import miutils
+
+        mc = MiCloud()
+        mc.user_id = self.user_id
+        mc.service_token = self.service_token
+        mc.ssecurity = self.ssecurity or ""
+        mc.session = miutils.get_session()
+        mc.default_server = self.country
+
+        api_base = (
+            "https://api.io.mi.com/app"
+            if self.country == "cn"
+            else f"https://{self.country}.api.io.mi.com/app"
+        )
+        url = f"{api_base}/home/device_list"
+
+        mc.session.cookies.update({
+            "userId": str(self.user_id),
+            "serviceToken": self.service_token,
+            "yetAnotherServiceToken": self.service_token,
+        })
+        mc.session.headers.update({
+            "x-xiaomi-protocal-flag-cli": "PROTOCAL-HTTP2",
+        })
+
+        payload = json.dumps(
+            {"getVirtualModel": False, "getHuamiDevices": 0},
+            separators=(",", ":"),
+        )
+        resp = mc.session.post(url, data={"data": payload}, timeout=15)
+        result = resp.json()
+
+        if result.get("code") != 0:
+            raise RuntimeError(
+                f"Token 可能已过期 (code={result.get('code')}), 请重新运行 python qr_login.py"
+            )
+
+        raw_devices = result.get("result", {}).get("list", [])
+        device_list = []
+        for raw in raw_devices:
+            try:
+                dev = CloudDeviceInfo.from_micloud(raw, self.country)
+                device_list.append(dev)
+            except Exception:
+                continue
+
+        room_lookup = self._build_room_lookup(mc)
+        readings = self._collect_readings(device_list, room_lookup, mc)
+        readings.sort(key=lambda item: (item.room.lower(), item.name.lower()))
+
+        return {
+            "count": len(readings),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "items": [item.to_dict() for item in readings],
+        }
+
+    def _collect_readings(
+        self, device_list: list, room_lookup: Dict[str, str], micloud_client: Any
+    ) -> List[ThermometerReading]:
         readings: List[ThermometerReading] = []
         for device in device_list:
             if not self._is_thermometer(device):
@@ -179,14 +270,7 @@ class XiaomiThermoService:
                     online=online,
                 )
             )
-
-        readings.sort(key=lambda item: (item.room.lower(), item.name.lower()))
-
-        return {
-            "count": len(readings),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "items": [item.to_dict() for item in readings],
-        }
+        return readings
 
     def _is_thermometer(self, device: CloudDeviceInfo) -> bool:
         model = (device.model or "").lower()
